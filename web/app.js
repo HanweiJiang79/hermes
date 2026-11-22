@@ -4,7 +4,7 @@
  *  2) Local Python FastAPI + esptool bridge (start.bat)
  */
 (() => {
-  const APP_VERSION = "1.2.1";
+  const APP_VERSION = "1.3.0";
   const GITHUB_REPO = "HanweiJiang79/hermes";
 
   const FALLBACK_APPS = [
@@ -920,7 +920,30 @@
     }
     state.serialConnected = false;
     $("btnSerialToggle").textContent = "连接串口监视器";
+    syncRemoteConnUI();
     appendConsole("serialConsole", "[系统] 串口已断开");
+    if ($("remoteLog")) appendConsole("remoteLog", "[系统] 控制串口已断开");
+  }
+
+  function syncRemoteConnUI() {
+    const badge = $("remoteConnBadge");
+    const txt = $("remoteConnText");
+    const btn = $("btnRemoteConnect");
+    if (!badge || !txt || !btn) return;
+    if (state.serialConnected) {
+      badge.className = "status-chip connected";
+      txt.textContent = "控制串口已连接 (115200)";
+      btn.textContent = "断开控制串口";
+    } else {
+      badge.className = "status-chip";
+      txt.textContent = "未连接串口";
+      btn.textContent = "连接控制串口";
+    }
+  }
+
+  function logSerialBoth(line) {
+    appendConsole("serialConsole", line);
+    if ($("remoteLog")) appendConsole("remoteLog", line);
   }
 
   async function connectWebSerial() {
@@ -936,7 +959,8 @@
       state.webSerialPort = port;
       state.serialConnected = true;
       $("btnSerialToggle").textContent = "断开串口";
-      appendConsole("serialConsole", `[Web Serial] 已直接连接串口 (${baudRate} bps)`);
+      syncRemoteConnUI();
+      logSerialBoth(`[Web Serial] 已直接连接串口 (${baudRate} bps)`);
 
       const decoder = new TextDecoderStream();
       port.readable.pipeTo(decoder.writable);
@@ -950,20 +974,15 @@
       while (state.serialConnected) {
         const { value, done } = await reader.read();
         if (done) break;
-        if (value) appendConsole("serialConsole", value.replace(/\r?\n$/, ""));
+        if (value) logSerialBoth(value.replace(/\r?\n$/, ""));
       }
     } catch (err) {
-      appendConsole("serialConsole", `[Web Serial] ${err.message}`);
+      logSerialBoth(`[Web Serial] ${err.message}`);
       await disconnectSerial();
     }
   }
 
-  $("btnWebSerialQuick").addEventListener("click", () => {
-    switchTab("device");
-    loadPorts();
-  });
-
-  $("btnSerialToggle").addEventListener("click", async () => {
+  async function toggleSerialConnection() {
     if (state.serialConnected) {
       await disconnectSerial();
       return;
@@ -979,39 +998,43 @@
     state.eventSource = es;
     state.serialConnected = true;
     $("btnSerialToggle").textContent = "断开串口";
+    syncRemoteConnUI();
 
     es.onmessage = (ev) => {
       try {
         const payload = JSON.parse(ev.data);
-        appendConsole("serialConsole", payload.line);
+        logSerialBoth(payload.line);
       } catch {
-        appendConsole("serialConsole", ev.data);
+        logSerialBoth(ev.data);
       }
     };
     es.onerror = () => {
-      appendConsole("serialConsole", "[系统] 串口流已关闭");
+      logSerialBoth("[系统] 串口流已关闭");
       disconnectSerial();
     };
+  }
+
+  $("btnWebSerialQuick").addEventListener("click", () => {
+    switchTab("device");
+    loadPorts();
   });
+
+  $("btnSerialToggle").addEventListener("click", toggleSerialConnection);
 
   $("btnSerialClear").addEventListener("click", () => {
     $("serialConsole").textContent = "";
   });
 
-  async function sendSerialCommand() {
-    const input = $("serialSendInput");
-    const cmd = input.value.trim();
-    if (!cmd) return;
-    input.value = "";
-
+  async function sendRawSerialLine(cmd) {
+    if (!cmd) return false;
     if (state.webSerialWriter) {
       await state.webSerialWriter.write(cmd + "\r\n");
-      appendConsole("serialConsole", `> ${cmd}`);
-      return;
+      logSerialBoth(`> ${cmd}`);
+      return true;
     }
     if (!state.bridgeOnline) {
-      showToast("请先连接串口监视器");
-      return;
+      showToast("请先点击「连接控制串口」连接 ESP32");
+      return false;
     }
     const port = $("portSelect").value;
     const res = await fetch("/api/serial/send", {
@@ -1022,15 +1045,67 @@
     if (!res.ok) {
       const err = await res.json();
       showToast(err.detail || "发送失败");
-      return;
+      return false;
     }
-    appendConsole("serialConsole", `> ${cmd}`);
+    logSerialBoth(`> ${cmd}`);
+    return true;
+  }
+
+  async function sendSerialCommand() {
+    const input = $("serialSendInput");
+    const cmd = input.value.trim();
+    if (!cmd) return;
+    input.value = "";
+    await sendRawSerialLine(cmd);
   }
 
   $("btnSerialSend").addEventListener("click", sendSerialCommand);
   $("serialSendInput").addEventListener("keydown", (e) => {
     if (e.key === "Enter") sendSerialCommand();
   });
+
+  // iPad Remote Control Tab Handlers
+  if ($("btnRemoteConnect")) {
+    $("btnRemoteConnect").addEventListener("click", toggleSerialConnection);
+  }
+  if ($("btnRemoteClearLog")) {
+    $("btnRemoteClearLog").addEventListener("click", () => {
+      $("remoteLog").textContent = "";
+    });
+  }
+  if ($("view-remote")) {
+    $("view-remote").addEventListener("click", async (e) => {
+      const btn = e.target.closest("[data-remote-cmd]");
+      if (!btn) return;
+      const cmd = btn.dataset.remoteCmd;
+      await sendRawSerialLine(cmd);
+    });
+  }
+  async function sendRemoteType(withEnter) {
+    const input = $("remoteTypeInput");
+    const text = input ? input.value : "";
+    if (!text) {
+      showToast("请先输入要发送到 iPad 的文字");
+      return;
+    }
+    const ok = await sendRawSerialLine(`TYPE:${text}`);
+    if (ok && withEnter) {
+      await new Promise((r) => setTimeout(r, 120));
+      await sendRawSerialLine("ENTER");
+    }
+    if (ok) input.value = "";
+  }
+  if ($("btnRemoteType")) {
+    $("btnRemoteType").addEventListener("click", () => sendRemoteType(false));
+  }
+  if ($("btnRemoteTypeEnter")) {
+    $("btnRemoteTypeEnter").addEventListener("click", () => sendRemoteType(true));
+  }
+  if ($("remoteTypeInput")) {
+    $("remoteTypeInput").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") sendRemoteType(false);
+    });
+  }
 
   // Feature Studio (Recommended Sensors + Requirements)
   const RECOMMENDED_SENSORS = [

@@ -814,6 +814,84 @@ th {
   }
 }
 
+/* iPad Remote Control Pad */
+.remote-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.remote-key {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 58px;
+  padding: 10px 8px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 0 var(--border);
+  transition: background 0.12s ease, transform 0.08s ease, box-shadow 0.08s ease;
+}
+
+.remote-key:hover {
+  background: var(--surface-subtle);
+}
+
+.remote-key:active {
+  transform: translateY(2px);
+  box-shadow: 0 0 0 var(--border);
+}
+
+.remote-key.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  box-shadow: 0 2px 0 #1d4ed8;
+}
+
+.remote-key.primary:hover {
+  background: var(--accent-hover);
+}
+
+.remote-key.dark {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+  box-shadow: 0 2px 0 #09090b;
+}
+
+.remote-key.dark:hover {
+  background: #27272a;
+}
+
+.remote-key-sub {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  opacity: 0.72;
+}
+
+.dpad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  max-width: 280px;
+  margin: 0 auto;
+}
+
+.dpad-spacer {
+  visibility: hidden;
+}
+
 /* Empty State & Toast */
 .empty-state {
   text-align: center;

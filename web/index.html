@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Hermes ESP32 Studio v1.2.1 — ESP32 固件备份、需求工坊与开源应用平台</title>
-  <meta name="description" content="用于 ESP32 开发板的交互式测试与管理工具：原始固件读取/备份/恢复、串口监视器、功能需求工坊、GitHub 最新 ESP32 应用广场及版本发布管理。" />
+  <title>Hermes ESP32 Studio v1.3.0 — ESP32 固件备份、iPad 遥控与开源应用平台</title>
+  <meta name="description" content="用于 ESP32 开发板的交互式测试与管理工具：原始固件读取/备份/恢复、iPad 蓝牙可视化遥控器、串口监视器、功能需求工坊、GitHub 最新 ESP32 应用广场及版本发布管理。" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=1.2.1" />
+  <link rel="stylesheet" href="styles.css?v=1.3.0" />
 </head>
 <body>
   <header class="topbar">
@@ -16,11 +16,12 @@
       <div class="brand">
         <div class="brand-mark" aria-hidden="true">E32</div>
         <h1 class="brand-title">Hermes ESP32 Studio</h1>
-        <span class="version-tag" id="appVersionBadge">v1.2.1</span>
+        <span class="version-tag" id="appVersionBadge">v1.3.0</span>
       </div>
 
       <nav class="nav-tabs" aria-label="主导航">
         <button class="nav-tab active" data-tab="device" id="tabBtnDevice">设备与备份</button>
+        <button class="nav-tab" data-tab="remote" id="tabBtnRemote">iPad 遥控器</button>
         <button class="nav-tab" data-tab="requirements" id="tabBtnRequirements">需求工坊</button>
         <button class="nav-tab" data-tab="apps" id="tabBtnApps">ESP32 应用广场</button>
         <button class="nav-tab" data-tab="releases" id="tabBtnReleases">版本与发布</button>
@@ -218,6 +219,120 @@
       </div>
     </section>
 
+    <!-- VIEW: IPAD BLUETOOTH REMOTE -->
+    <section class="view" id="view-remote">
+      <div class="page-header">
+        <div>
+          <h2>iPad 蓝牙可视化遥控器</h2>
+          <p>通过 USB 串口向 ESP32-S3（<code>Hermes-iPad-HID</code>）发送指令，一键控制已配对的 iPad mini 3。</p>
+        </div>
+        <div class="btn-row">
+          <span class="status-chip" id="remoteConnBadge"><span class="status-dot"></span><span id="remoteConnText">未连接串口</span></span>
+          <button class="btn btn-primary" id="btnRemoteConnect">连接控制串口</button>
+          <button class="btn" data-remote-cmd="STATUS">检查蓝牙状态</button>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h3 class="panel-title">媒体播放与系统控制</h3>
+              <p class="panel-subtitle">iPad mini 3（iOS 12）原生完美支持，点击即生效。</p>
+            </div>
+          </div>
+
+          <div class="remote-grid" style="margin-bottom: 12px;">
+            <button class="remote-key" data-remote-cmd="PREV"><span>上一首</span><span class="remote-key-sub">PREV</span></button>
+            <button class="remote-key primary" data-remote-cmd="PLAY"><span>播放 / 暂停</span><span class="remote-key-sub">PLAY</span></button>
+            <button class="remote-key" data-remote-cmd="NEXT"><span>下一首</span><span class="remote-key-sub">NEXT</span></button>
+            <button class="remote-key" data-remote-cmd="VOL-"><span>音量 -</span><span class="remote-key-sub">VOL-</span></button>
+            <button class="remote-key" data-remote-cmd="MUTE"><span>静音</span><span class="remote-key-sub">MUTE</span></button>
+            <button class="remote-key" data-remote-cmd="VOL+"><span>音量 +</span><span class="remote-key-sub">VOL+</span></button>
+            <button class="remote-key dark" data-remote-cmd="HOME"><span>主屏幕</span><span class="remote-key-sub">HOME</span></button>
+            <button class="remote-key dark" data-remote-cmd="SPOTLIGHT"><span>全局搜索</span><span class="remote-key-sub">Cmd+Space</span></button>
+            <button class="remote-key dark" data-remote-cmd="LOCK"><span>锁屏</span><span class="remote-key-sub">LOCK</span></button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h3 class="panel-title">方向键与常用按键</h3>
+              <p class="panel-subtitle">用于 iPad 翻页、菜单导航与输入确认。</p>
+            </div>
+          </div>
+
+          <div class="dpad-grid" style="margin-bottom: 14px;">
+            <div class="dpad-spacer"></div>
+            <button class="remote-key" data-remote-cmd="UP"><span>↑</span><span class="remote-key-sub">UP</span></button>
+            <div class="dpad-spacer"></div>
+            <button class="remote-key" data-remote-cmd="LEFT"><span>←</span><span class="remote-key-sub">LEFT</span></button>
+            <button class="remote-key primary" data-remote-cmd="ENTER"><span>确认</span><span class="remote-key-sub">ENTER</span></button>
+            <button class="remote-key" data-remote-cmd="RIGHT"><span>→</span><span class="remote-key-sub">RIGHT</span></button>
+            <div class="dpad-spacer"></div>
+            <button class="remote-key" data-remote-cmd="DOWN"><span>↓</span><span class="remote-key-sub">DOWN</span></button>
+            <div class="dpad-spacer"></div>
+          </div>
+
+          <div class="btn-row" style="justify-content: center;">
+            <button class="btn btn-sm" data-remote-cmd="SPACE">空格 (SPACE)</button>
+            <button class="btn btn-sm" data-remote-cmd="BACKSPACE">退格 (BACKSPACE)</button>
+            <button class="btn btn-sm" data-remote-cmd="TAB">Tab</button>
+            <button class="btn btn-sm" data-remote-cmd="ESC">Esc</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h3 class="panel-title">远程打字直传 iPad</h3>
+              <p class="panel-subtitle">在 iPad 备忘录或搜索框点击输入区后，直接从电脑发送文字。</p>
+            </div>
+          </div>
+          <div class="toolbar" style="margin-bottom: 10px;">
+            <div class="field">
+              <input type="text" id="remoteTypeInput" placeholder="输入英文、数字或网址（例如 Hello iPad! 或 https://...）" />
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary" id="btnRemoteType">发送文字到 iPad</button>
+            <button class="btn btn-dark" id="btnRemoteTypeEnter">发送并回车</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h3 class="panel-title">鼠标与滚轮测试</h3>
+              <p class="panel-subtitle">适用于 iPadOS 13+ / 电脑（iPad mini 3 原生 iOS 12 不显示光标）。</p>
+            </div>
+          </div>
+          <div class="remote-grid">
+            <button class="remote-key" data-remote-cmd="MOVE:-40,0"><span>← 左移</span><span class="remote-key-sub">-40,0</span></button>
+            <button class="remote-key" data-remote-cmd="MOVE:0,-40"><span>↑ 上移</span><span class="remote-key-sub">0,-40</span></button>
+            <button class="remote-key" data-remote-cmd="MOVE:40,0"><span>→ 右移</span><span class="remote-key-sub">+40,0</span></button>
+            <button class="remote-key primary" data-remote-cmd="CLICK"><span>左键点击</span><span class="remote-key-sub">CLICK</span></button>
+            <button class="remote-key" data-remote-cmd="MOVE:0,40"><span>↓ 下移</span><span class="remote-key-sub">0,+40</span></button>
+            <button class="remote-key" data-remote-cmd="RCLICK"><span>右键点击</span><span class="remote-key-sub">RCLICK</span></button>
+            <button class="remote-key" data-remote-cmd="SCROLL:3"><span>向上滚动</span><span class="remote-key-sub">SCROLL:+3</span></button>
+            <button class="remote-key" data-remote-cmd="SCROLL:-3"><span>向下滚动</span><span class="remote-key-sub">SCROLL:-3</span></button>
+            <button class="remote-key" data-remote-cmd="HELP"><span>查看指令</span><span class="remote-key-sub">HELP</span></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h3 class="panel-title">遥控指令实时回执</h3>
+          <button class="btn btn-sm" id="btnRemoteClearLog">清空</button>
+        </div>
+        <div class="terminal terminal-compact" id="remoteLog">[遥控器就绪] 点击右上角「连接控制串口」（115200 bps）后，点击上方任意按键即可远程控制您的 iPad mini 3。</div>
+      </div>
+    </section>
+
     <!-- VIEW 2: FEATURE STUDIO -->
     <section class="view" id="view-requirements">
       <div class="page-header">
@@ -356,7 +471,7 @@
         <div class="panel">
           <div class="panel-header">
             <h3 class="panel-title">当前运行版本</h3>
-            <span class="tag tag-accent mono" id="releaseCurrentVer">v1.2.1</span>
+            <span class="tag tag-accent mono" id="releaseCurrentVer">v1.3.0</span>
           </div>
           <p style="margin: 0 0 12px; color: var(--ink-secondary);">
             仓库地址：<a href="https://github.com/HanweiJiang79/hermes" target="_blank" rel="noopener" class="mono">HanweiJiang79/hermes</a>
@@ -384,7 +499,7 @@
           <h3 class="panel-title">变更日志 (Changelog)</h3>
         </div>
         <div style="font-size: 13.5px; color: var(--ink-secondary); line-height: 1.75;">
-          <div style="margin-bottom: 6px;"><span class="tag tag-success mono">v1.2.1</span> <strong style="margin-left: 6px; color: var(--ink);">2026-11-21 推荐传感器勾选与自动引脚接线</strong></div>
+          <div style="margin-bottom: 6px;"><span class="tag tag-success mono">v1.3.0</span> <strong style="margin-left: 6px; color: var(--ink);">2026-11-21 推荐传感器勾选与自动引脚接线</strong></div>
           <ul style="margin: 6px 0 14px; padding-left: 20px;">
             <li>需求工坊新增 12 款推荐 ESP32 传感器多选面板（含 AHT20、BME280、BH1750、SGP30、LD2410、VL53L0X、MPU6050、INMP441、OV2640、MAX30102、SSD1306 OLED、WS2812B）。</li>
             <li>勾选后实时生成推荐引脚接线说明，并在生成代码框架与 GitHub Issue 时自动带入所选传感器初始化代码。</li>
@@ -403,7 +518,7 @@
   </main>
 
   <footer class="footer">
-    <div>Hermes ESP32 Studio <span class="mono" id="footerVersion">v1.2.1</span> · 专为 ESP32 开发与测试打造</div>
+    <div>Hermes ESP32 Studio <span class="mono" id="footerVersion">v1.3.0</span> · 专为 ESP32 开发与测试打造</div>
     <div>
       <a href="https://github.com/HanweiJiang79/hermes" target="_blank" rel="noopener">GitHub: HanweiJiang79/hermes</a>
     </div>
