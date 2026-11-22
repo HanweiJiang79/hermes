@@ -377,6 +377,7 @@ class RequirementCreate(BaseModel):
     framework: str = "Arduino"
     priority: str = "中"
     description: str = Field(..., min_length=1)
+    sensors: list[str] = Field(default_factory=list)
 
 
 class RequirementStatusUpdate(BaseModel):
@@ -776,6 +777,7 @@ def create_requirement(req: RequirementCreate) -> dict[str, Any]:
         "framework": req.framework,
         "priority": req.priority,
         "description": req.description.strip(),
+        "sensors": req.sensors,
         "status": "待实现",
         "starterCode": _generate_starter_code(req.title, req.board, req.framework, req.description, version),
         "createdAt": datetime.now(timezone.utc).isoformat(),

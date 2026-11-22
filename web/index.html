@@ -274,6 +274,18 @@
             </div>
           </div>
 
+          <div class="sensor-section">
+            <div class="sensor-section-head">
+              <label>推荐可用传感器（可多选，生成代码时自动带入引脚接线与初始化模板）</label>
+              <div class="btn-row">
+                <span class="tag" id="selectedSensorCount">已选 0 个传感器</span>
+                <button type="button" class="btn btn-sm" id="btnClearSensors">清空勾选</button>
+              </div>
+            </div>
+            <div class="sensor-grid" id="sensorGrid"></div>
+            <div class="wiring-box" id="sensorWiringBox"></div>
+          </div>
+
           <div class="field" style="margin-bottom: 14px;">
             <label for="reqDescription">详细需求描述（预期行为、引脚定义、触发条件等）</label>
             <textarea id="reqDescription" required placeholder="请描述希望在板卡上实现的功能细节，例如：开机后连接 Wi-Fi，按 BOOT 键切换测试模式，通过串口每秒打印一次传感器采样值..."></textarea>
@@ -344,7 +356,7 @@
         <div class="panel">
           <div class="panel-header">
             <h3 class="panel-title">当前运行版本</h3>
-            <span class="tag tag-accent mono" id="releaseCurrentVer">v1.0.0</span>
+            <span class="tag tag-accent mono" id="releaseCurrentVer">v1.2.0</span>
           </div>
           <p style="margin: 0 0 12px; color: var(--ink-secondary);">
             仓库地址：<a href="https://github.com/HanweiJiang79/hermes" target="_blank" rel="noopener" class="mono">HanweiJiang79/hermes</a>
@@ -352,9 +364,8 @@
           <div style="font-size: 13px; color: var(--ink-secondary); line-height: 1.7;">
             <strong>Windows 本地连接 COM5 快速启动：</strong>
             <ol style="margin: 6px 0 0; padding-left: 18px;">
-              <li>克隆仓库：<code>git clone https://github.com/HanweiJiang79/hermes.git</code></li>
-              <li>双击目录中的 <code>start.bat</code>（自动安装 <code>esptool</code> 与串口依赖）</li>
-              <li>自动打开浏览器后，在左上角选择 <code>COM5</code> 即可读取、备份与恢复板卡原始固件</li>
+              <li>推荐方式：直接使用 Chrome / Edge 打开在线网页版，通过 Web Serial 直连 <code>COM5</code></li>
+              <li>本地桥接方式：克隆仓库后双击 <code>start.bat</code> 启动本地 <code>esptool</code> 服务</li>
             </ol>
           </div>
         </div>
@@ -373,13 +384,18 @@
           <h3 class="panel-title">变更日志 (Changelog)</h3>
         </div>
         <div style="font-size: 13.5px; color: var(--ink-secondary); line-height: 1.75;">
-          <div style="margin-bottom: 6px;"><span class="tag tag-success mono">v1.0.0</span> <strong style="margin-left: 6px; color: var(--ink);">2026-11-21 首个正式发布版本</strong></div>
+          <div style="margin-bottom: 6px;"><span class="tag tag-success mono">v1.2.0</span> <strong style="margin-left: 6px; color: var(--ink);">2026-11-21 推荐传感器勾选与自动引脚接线</strong></div>
+          <ul style="margin: 6px 0 14px; padding-left: 20px;">
+            <li>需求工坊新增 12 款推荐 ESP32 传感器多选面板（含 AHT20、BME280、BH1750、SGP30、LD2410、VL53L0X、MPU6050、INMP441、OV2640、MAX30102、SSD1306 OLED、WS2812B）。</li>
+            <li>勾选后实时生成推荐引脚接线说明，并在生成代码框架与 GitHub Issue 时自动带入所选传感器初始化代码。</li>
+          </ul>
+          <div style="margin-bottom: 6px;"><span class="tag mono">v1.1.0</span> <strong style="margin-left: 6px; color: var(--ink);">2026-11-21 GitHub Pages 在线直连版</strong></div>
+          <ul style="margin: 6px 0 14px; padding-left: 20px;">
+            <li>发布 GitHub Pages 在线网页版，内置浏览器端 <code>esptool-js</code>（Web Serial API），免安装即可连接 <code>COM5</code> 读写 Flash。</li>
+          </ul>
+          <div style="margin-bottom: 6px;"><span class="tag mono">v1.0.0</span> <strong style="margin-left: 6px; color: var(--ink);">2026-11-21 首个正式发布版本</strong></div>
           <ul style="margin: 6px 0 0; padding-left: 20px;">
-            <li>支持通过 <code>esptool</code> 自动检测 ESP32 芯片型号、MAC 与 Flash 容量，一键读取并备份原始程序（含版本号与 SHA-256 校验）。</li>
-            <li>支持下载备份 <code>.bin</code> 文件、一键恢复原厂固件及上传自定义 <code>.bin</code> 烧录。</li>
-            <li>内置实时串口监视器（本地服务 SSE 流 + 浏览器 Web Serial API 双模式）。</li>
-            <li>新增「需求工坊」：输入 ESP32 新功能需求自动生成 Arduino / ESP-IDF / MicroPython 代码框架，并支持同步至 GitHub Issue。</li>
-            <li>新增「ESP32 应用广场」：聚合 12 款当前 GitHub 最新热门 ESP32 开源应用并支持实时搜索。</li>
+            <li>支持原始固件备份/下载/恢复、实时串口监视器、功能需求工坊与 GitHub 最新 ESP32 应用广场。</li>
           </ul>
         </div>
       </div>
@@ -387,7 +403,7 @@
   </main>
 
   <footer class="footer">
-    <div>Hermes ESP32 Studio <span class="mono" id="footerVersion">v1.0.0</span> · 专为 ESP32 开发与测试打造</div>
+    <div>Hermes ESP32 Studio <span class="mono" id="footerVersion">v1.2.0</span> · 专为 ESP32 开发与测试打造</div>
     <div>
       <a href="https://github.com/HanweiJiang79/hermes" target="_blank" rel="noopener">GitHub: HanweiJiang79/hermes</a>
     </div>

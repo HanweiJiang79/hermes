@@ -2,6 +2,16 @@
 
 All notable changes to **Hermes ESP32 Studio** will be documented in this file.
 
+## [v1.2.0] - 2026-11-21
+
+### Added
+- **推荐传感器勾选面板**：在「需求工坊」新增 14 款 ESP32 常用推荐传感器多选卡片（涵盖 I2C/UART/I2S/GPIO/DVP），勾选后实时显示推荐参考引脚接线，并自动将所选传感器带入代码框架与 GitHub Issue。
+
+## [v1.1.0] - 2026-11-21
+
+### Added
+- 发布 GitHub Pages 在线网页版，内置浏览器端 `esptool-js`（Web Serial API）直连 `COM5` 进行固件读取、备份、恢复与烧录。
+
 ## [v1.0.1] - 2026-11-21
 
 ### Fixed

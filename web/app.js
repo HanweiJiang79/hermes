@@ -4,7 +4,7 @@
  *  2) Local Python FastAPI + esptool bridge (start.bat)
  */
 (() => {
-  const APP_VERSION = "1.1.0";
+  const APP_VERSION = "1.2.0";
   const GITHUB_REPO = "HanweiJiang79/hermes";
 
   const FALLBACK_APPS = [
@@ -980,15 +980,95 @@
     if (e.key === "Enter") sendSerialCommand();
   });
 
-  // Feature Studio (Requirements)
-  function buildClientStarterCode(title, board, framework, description, version) {
+  // Feature Studio (Recommended Sensors + Requirements)
+  const RECOMMENDED_SENSORS = [
+    { id: "AHT20", name: "AHT20 / SHT30", desc: "温湿度监测", bus: "I2C", pin: "SDA→GPIO8, SCL→GPIO9, 3V3/GND" },
+    { id: "BME280", name: "BME280", desc: "温湿度 + 气压", bus: "I2C", pin: "SDA→GPIO8, SCL→GPIO9, 3V3/GND" },
+    { id: "BH1750", name: "BH1750", desc: "环境光照强度", bus: "I2C", pin: "SDA→GPIO8, SCL→GPIO9, 3V3/GND" },
+    { id: "SGP30", name: "SGP30", desc: "CO₂ / 空气质量", bus: "I2C", pin: "SDA→GPIO8, SCL→GPIO9, 3V3/GND" },
+    { id: "LD2410", name: "LD2410 雷达", desc: "24GHz 人体存在", bus: "UART", pin: "TX→GPIO18, RX→GPIO17, 5V/GND" },
+    { id: "HC-SR501", name: "HC-SR501", desc: "热释电人体红外", bus: "GPIO", pin: "OUT→GPIO4, 3V3/5V, GND" },
+    { id: "VL53L0X", name: "VL53L0X", desc: "激光 ToF 测距", bus: "I2C", pin: "SDA→GPIO8, SCL→GPIO9, 3V3/GND" },
+    { id: "MPU6050", name: "MPU6050", desc: "六轴姿态 / 陀螺仪", bus: "I2C", pin: "SDA→GPIO8, SCL→GPIO9, 3V3/GND" },
+    { id: "INMP441", name: "INMP441", desc: "I2S 数字麦克风", bus: "I2S", pin: "SCK→GPIO5, WS→GPIO6, SD→GPIO7" },
+    { id: "OV2640", name: "OV2640", desc: "ESP32-S3 摄像头", bus: "DVP", pin: "接板载 FPC 摄像头座" },
+    { id: "MAX30102", name: "MAX30102", desc: "心率 / 血氧检测", bus: "I2C", pin: "SDA→GPIO8, SCL→GPIO9, 3V3/GND" },
+    { id: "SSD1306", name: "SSD1306 OLED", desc: "0.96 寸屏幕显示", bus: "I2C", pin: "SDA→GPIO8, SCL→GPIO9, 3V3/GND" },
+    { id: "WS2812B", name: "WS2812B 彩灯", desc: "可编程 RGB 灯珠", bus: "GPIO", pin: "DIN→GPIO48, 3V3/5V, GND" },
+    { id: "PN532", name: "PN532 / RC522", desc: "NFC / RFID 刷卡", bus: "I2C/SPI", pin: "SDA→GPIO8, SCL→GPIO9 (I2C模式)" },
+  ];
+
+  const selectedSensors = new Set();
+
+  function renderSensorSelector() {
+    const grid = $("sensorGrid");
+    if (!grid) return;
+    grid.innerHTML = RECOMMENDED_SENSORS.map((s) => {
+      const checked = selectedSensors.has(s.id);
+      return `
+        <label class="sensor-option ${checked ? "selected" : ""}" data-sensor-id="${escapeHtml(s.id)}">
+          <input type="checkbox" value="${escapeHtml(s.id)}" ${checked ? "checked" : ""} />
+          <div class="sensor-info">
+            <div class="sensor-name">${escapeHtml(s.name)}</div>
+            <div class="sensor-meta">${escapeHtml(s.desc)} · <span class="mono">${escapeHtml(s.bus)}</span></div>
+          </div>
+        </label>`;
+    }).join("");
+    updateSensorWiringHint();
+  }
+
+  function updateSensorWiringHint() {
+    const countEl = $("selectedSensorCount");
+    const box = $("sensorWiringBox");
+    if (countEl) countEl.textContent = `已选 ${selectedSensors.size} 个传感器`;
+    if (!box) return;
+    if (!selectedSensors.size) {
+      box.classList.remove("visible");
+      box.innerHTML = "";
+      return;
+    }
+    const chosen = RECOMMENDED_SENSORS.filter((s) => selectedSensors.has(s.id));
+    const lines = chosen.map((s) => `• <strong>${escapeHtml(s.name)}</strong>（${escapeHtml(s.bus)}）：<code>${escapeHtml(s.pin)}</code>`);
+    box.innerHTML = `<div style="font-weight:600;color:var(--ink);margin-bottom:4px;">推荐参考接线（ESP32-S3，多个 I2C 传感器可并联共用同一组 SDA/SCL）：</div>${lines.join("<br>")}`;
+    box.classList.add("visible");
+  }
+
+  if ($("sensorGrid")) {
+    $("sensorGrid").addEventListener("change", (e) => {
+      const cb = e.target.closest('input[type="checkbox"]');
+      if (!cb) return;
+      if (cb.checked) selectedSensors.add(cb.value);
+      else selectedSensors.delete(cb.value);
+      const card = cb.closest(".sensor-option");
+      if (card) card.classList.toggle("selected", cb.checked);
+      updateSensorWiringHint();
+    });
+  }
+
+  if ($("btnClearSensors")) {
+    $("btnClearSensors").addEventListener("click", () => {
+      selectedSensors.clear();
+      renderSensorSelector();
+    });
+  }
+
+  function buildClientStarterCode(title, board, framework, description, version, sensors = []) {
+    const chosen = RECOMMENDED_SENSORS.filter((s) => sensors.includes(s.id));
+    const sensorSummary = chosen.length ? chosen.map((s) => `${s.name}(${s.bus})`).join(", ") : "无外接传感器";
+    const hasI2C = chosen.some((s) => s.bus.includes("I2C"));
+
     if (framework === "ESP-IDF") {
-      return `/* Project: ${title} (${version}) | Target: ${board} | ESP-IDF */\n#include <stdio.h>\n#include "freertos/FreeRTOS.h"\n#include "freertos/task.h"\n#include "esp_log.h"\n\nstatic const char *TAG = "HERMES_APP";\n\nvoid app_main(void) {\n    ESP_LOGI(TAG, "Starting ${title} [${version}] on ${board}");\n    // Spec: ${description}\n    while (1) {\n        ESP_LOGI(TAG, "Heartbeat OK");\n        vTaskDelay(pdMS_TO_TICKS(1000));\n    }\n}`;
+      const wiringComments = chosen.map((s) => ` *   - ${s.name}: ${s.pin}`).join("\n");
+      return `/*\n * Project: ${title} (${version}) | Target: ${board} | ESP-IDF\n * Sensors: ${sensorSummary}\n${wiringComments ? wiringComments + "\n" : ""} * Spec:    ${description}\n */\n#include <stdio.h>\n#include "freertos/FreeRTOS.h"\n#include "freertos/task.h"\n#include "esp_log.h"\n${hasI2C ? '#include "driver/i2c.h"\n' : ""}\nstatic const char *TAG = "HERMES_APP";\n\nvoid app_main(void) {\n    ESP_LOGI(TAG, "Starting ${title} [${version}] on ${board}");\n    ESP_LOGI(TAG, "Sensors: ${sensorSummary}");\n    while (1) {\n        ESP_LOGI(TAG, "Sampling sensors & heartbeat OK");\n        vTaskDelay(pdMS_TO_TICKS(1000));\n    }\n}`;
     }
     if (framework === "MicroPython") {
-      return `# Project: ${title} (${version}) | Target: ${board} | MicroPython\n# Spec: ${description}\nimport time\nfrom machine import Pin\n\nled = Pin(2, Pin.OUT)\nprint("[Hermes] Starting ${title} (${version})")\nwhile True:\n    led.value(1)\n    time.sleep(1)\n    led.value(0)\n    time.sleep(1)`;
+      const i2cInit = hasI2C ? "from machine import I2C\ni2c = I2C(0, scl=Pin(9), sda=Pin(8), freq=400000)\nprint('[I2C] Found devices:', [hex(a) for a in i2c.scan()])\n" : "";
+      return `# Project: ${title} (${version}) | Target: ${board} | MicroPython\n# Sensors: ${sensorSummary}\n# Spec: ${description}\nimport time\nfrom machine import Pin\n\nled = Pin(2, Pin.OUT)\n${i2cInit}print("[Hermes] Starting ${title} (${version})")\nwhile True:\n    led.value(1)\n    time.sleep(1)\n    led.value(0)\n    time.sleep(1)`;
     }
-    return `/* Project: ${title} (${version}) | Target: ${board} | Arduino-ESP32 */\n#include <Arduino.h>\n#define APP_VERSION "${version}"\n\nvoid setup() {\n  Serial.begin(115200);\n  Serial.println("Hermes App: ${title} " APP_VERSION);\n  // Spec: ${description}\n}\n\nvoid loop() {\n  Serial.println("[Heartbeat] Running on ${board}");\n  delay(1000);\n}`;
+    const wiringComments = chosen.map((s) => ` *   - ${s.name}: ${s.pin}`).join("\n");
+    const i2cHeader = hasI2C ? "#include <Wire.h>\n#define I2C_SDA 8\n#define I2C_SCL 9\n" : "";
+    const i2cSetup = hasI2C ? '  Wire.begin(I2C_SDA, I2C_SCL);\n  Serial.println("[I2C] Bus initialized on GPIO8/GPIO9");\n' : "";
+    return `/*\n * Project: ${title} (${version}) | Target: ${board} | Arduino-ESP32\n * Sensors: ${sensorSummary}\n${wiringComments ? wiringComments + "\n" : ""} * Spec:    ${description}\n */\n#include <Arduino.h>\n${i2cHeader}#define APP_VERSION "${version}"\n\nvoid setup() {\n  Serial.begin(115200);\n  delay(200);\n  Serial.println("Hermes App: ${title} " APP_VERSION);\n  Serial.println("Sensors: ${sensorSummary}");\n${i2cSetup}}\n\nvoid loop() {\n  Serial.println("[Heartbeat] Running on ${board}");\n  delay(1000);\n}`;
   }
 
   async function loadRequirements() {
@@ -1014,12 +1094,15 @@
 
     list.innerHTML = state.requirements
       .map((r) => {
+        const sensorList = Array.isArray(r.sensors) ? r.sensors : [];
+        const sensorsMd = sensorList.length ? sensorList.join(", ") : "无";
         const issueTitle = encodeURIComponent(`[ESP32 需求 ${r.version}] ${r.title}`);
         const issueBody = encodeURIComponent(
-          `### 需求信息\n- **版本号**: ${r.version}\n- **目标板卡**: ${r.board}\n- **开发框架**: ${r.framework}\n- **分类 / 优先级**: ${r.category} / ${r.priority}\n\n### 需求描述\n${r.description}\n\n### 初始代码框架\n\`\`\`cpp\n${r.starterCode}\n\`\`\``
+          `### 需求信息\n- **版本号**: ${r.version}\n- **目标板卡**: ${r.board}\n- **开发框架**: ${r.framework}\n- **分类 / 优先级**: ${r.category} / ${r.priority}\n- **勾选传感器**: ${sensorsMd}\n\n### 需求描述\n${r.description}\n\n### 初始代码框架\n\`\`\`cpp\n${r.starterCode}\n\`\`\``
         );
         const ghIssueUrl = `https://github.com/${GITHUB_REPO}/issues/new?title=${issueTitle}&body=${issueBody}`;
         const statusCls = r.status === "已验证" ? "tag-success" : r.status === "测试中" ? "tag-warning" : "tag";
+        const sensorTags = sensorList.map((s) => `<span class="tag tag-success">${escapeHtml(s)}</span>`).join("");
 
         return `
         <article class="req-item">
@@ -1032,6 +1115,7 @@
                 <span class="tag">${escapeHtml(r.framework)}</span>
                 <span class="tag">${escapeHtml(r.category)}</span>
                 <span class="tag ${statusCls}">${escapeHtml(r.status)}</span>
+                ${sensorTags}
               </div>
             </div>
             <div class="btn-row">
@@ -1050,6 +1134,7 @@
 
   $("reqForm").addEventListener("submit", async (e) => {
     e.preventDefault();
+    const sensors = Array.from(selectedSensors);
     const payload = {
       title: $("reqTitle").value.trim(),
       board: $("reqBoard").value,
@@ -1057,6 +1142,7 @@
       category: $("reqCategory").value,
       priority: $("reqPriority").value,
       description: $("reqDescription").value.trim(),
+      sensors,
     };
     if (!payload.title || !payload.description) return;
 
@@ -1067,12 +1153,21 @@
         version,
         ...payload,
         status: "待实现",
-        starterCode: buildClientStarterCode(payload.title, payload.board, payload.framework, payload.description, version),
+        starterCode: buildClientStarterCode(
+          payload.title,
+          payload.board,
+          payload.framework,
+          payload.description,
+          version,
+          sensors
+        ),
         createdAt: new Date().toISOString(),
       });
       saveBrowserData();
       renderRequirements();
       $("reqForm").reset();
+      selectedSensors.clear();
+      renderSensorSelector();
       showToast(`已生成需求 ${version} 及代码框架`);
       return;
     }
@@ -1085,6 +1180,8 @@
     if (res.ok) {
       const data = await res.json();
       $("reqForm").reset();
+      selectedSensors.clear();
+      renderSensorSelector();
       await loadRequirements();
       showToast(`已保存需求 ${data.requirement.version}`);
     }
@@ -1293,5 +1390,6 @@
   $("btnReloadReleases").addEventListener("click", loadReleases);
 
   // Boot
+  renderSensorSelector();
   initBridge();
 })();
