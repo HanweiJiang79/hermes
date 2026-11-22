@@ -24,7 +24,7 @@ def test_web_index_served():
     res = client.get("/")
     assert res.status_code == 200
     assert "Hermes ESP32 Studio" in res.text
-    assert "v1.0.0" in res.text
+    assert f"v{server.APP_VERSION}" in res.text
 
 
 def test_curated_github_apps():

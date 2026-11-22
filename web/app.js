@@ -1,6 +1,10 @@
-/* Hermes ESP32 Studio — Frontend Controller (v1.0.0) */
+/* Hermes ESP32 Studio — Frontend Controller (v1.1.0)
+ * Supports BOTH:
+ *  1) Online GitHub Pages / Browser Web Serial + esptool-js (zero install, Chrome/Edge)
+ *  2) Local Python FastAPI + esptool bridge (start.bat)
+ */
 (() => {
-  const APP_VERSION = "1.0.0";
+  const APP_VERSION = "1.1.0";
   const GITHUB_REPO = "HanweiJiang79/hermes";
 
   const FALLBACK_APPS = [
@@ -154,6 +158,7 @@
     bridgeOnline: false,
     version: APP_VERSION,
     chip: "ESP32-S3",
+    detectedFlashMB: 4,
     apps: [...FALLBACK_APPS],
     activeCategory: "全部",
     backups: [],
@@ -163,16 +168,116 @@
     webSerialPort: null,
     webSerialReader: null,
     webSerialWriter: null,
+    esptoolMod: null,
+    selectedEspPort: null,
   };
 
   const $ = (id) => document.getElementById(id);
+
+  // IndexedDB for storing real .bin firmware backups in Browser Web Serial mode
+  const DB_NAME = "hermes_esp32_backups_v1";
+  const STORE_NAME = "blobs";
+
+  function openBackupDB() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = () => {
+        if (!req.result.objectStoreNames.contains(STORE_NAME)) {
+          req.result.createObjectStore(STORE_NAME);
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function saveBlobToIDB(id, uint8Array) {
+    const db = await openBackupDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      tx.objectStore(STORE_NAME).put(uint8Array, id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async function loadBlobFromIDB(id) {
+    const db = await openBackupDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, "readonly");
+      const req = tx.objectStore(STORE_NAME).get(id);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function deleteBlobFromIDB(id) {
+    const db = await openBackupDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      tx.objectStore(STORE_NAME).delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async function loadEsptoolJS() {
+    if (state.esptoolMod) return state.esptoolMod;
+    const urls = [
+      "https://cdn.jsdelivr.net/npm/esptool-js@0.7.1/bundle.js",
+      "https://unpkg.com/esptool-js@0.7.1/bundle.js",
+    ];
+    let lastErr;
+    for (const url of urls) {
+      try {
+        state.esptoolMod = await import(url);
+        return state.esptoolMod;
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    throw new Error(`无法加载浏览器 esptool-js 组件: ${lastErr?.message || "网络受限"}`);
+  }
+
+  async function computeSha256Hex(uint8Array) {
+    const hashBuf = await crypto.subtle.digest("SHA-256", uint8Array);
+    return Array.from(new Uint8Array(hashBuf))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+  }
+
+  function triggerDownloadBlob(uint8Array, filename) {
+    const blob = new Blob([uint8Array], { type: "application/octet-stream" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function flashSizeToBytes(sizeStr) {
+    const map = {
+      "2MB": 2 * 1024 * 1024,
+      "4MB": 4 * 1024 * 1024,
+      "8MB": 8 * 1024 * 1024,
+      "16MB": 16 * 1024 * 1024,
+      "32MB": 32 * 1024 * 1024,
+    };
+    if (sizeStr === "ALL") {
+      return (state.detectedFlashMB || 4) * 1024 * 1024;
+    }
+    return map[sizeStr] || 4 * 1024 * 1024;
+  }
 
   function showToast(msg) {
     const el = $("toast");
     el.textContent = msg;
     el.classList.add("show");
     clearTimeout(el._timer);
-    el._timer = setTimeout(() => el.classList.remove("show"), 2800);
+    el._timer = setTimeout(() => el.classList.remove("show"), 3200);
   }
 
   function escapeHtml(str) {
@@ -216,6 +321,54 @@
     $("taskProgressFill").style.width = `${pct}%`;
   }
 
+  function makeEsptoolTerminal() {
+    return {
+      clean: () => {
+        $("esptoolConsole").textContent = "";
+      },
+      writeLine: (data) => appendConsole("esptoolConsole", String(data)),
+      write: (data) => {
+        const el = $("esptoolConsole");
+        el.textContent += String(data);
+        el.scrollTop = el.scrollHeight;
+      },
+    };
+  }
+
+  async function ensureWebSerialEspPort() {
+    if (!("serial" in navigator)) {
+      throw new Error("当前浏览器不支持 Web Serial API，请使用最新版 Chrome 或 Edge 浏览器打开本页面。");
+    }
+    if (state.serialConnected) {
+      await disconnectSerial();
+    }
+    if (!state.selectedEspPort) {
+      state.selectedEspPort = await navigator.serial.requestPort();
+    }
+    return state.selectedEspPort;
+  }
+
+  async function withWebEsploader(baud, fn) {
+    const { ESPLoader, Transport } = await loadEsptoolJS();
+    const port = await ensureWebSerialEspPort();
+    const transport = new Transport(port, true);
+    const loader = new ESPLoader({
+      transport,
+      baudrate: baud,
+      romBaudrate: 115200,
+      terminal: makeEsptoolTerminal(),
+    });
+    try {
+      const chip = await loader.main();
+      state.chip = chip || "ESP32";
+      return await fn(loader, chip);
+    } finally {
+      try {
+        await transport.disconnect();
+      } catch {}
+    }
+  }
+
   // Navigation Tabs
   function switchTab(tabName) {
     document.querySelectorAll(".nav-tab").forEach((btn) => {
@@ -230,7 +383,7 @@
     btn.addEventListener("click", () => switchTab(btn.dataset.tab));
   });
 
-  // Detect Local Bridge
+  // Detect Local Bridge vs Online Web Serial Mode
   async function initBridge() {
     const chip = $("modeStatusChip");
     const txt = $("modeStatusText");
@@ -238,7 +391,7 @@
     const bannerText = $("modeBannerText");
 
     try {
-      const res = await fetch("/api/meta", { signal: AbortSignal.timeout(1800) });
+      const res = await fetch("/api/meta", { signal: AbortSignal.timeout(1200) });
       if (!res.ok) throw new Error("not ok");
       const meta = await res.json();
       state.bridgeOnline = true;
@@ -254,22 +407,22 @@
       await Promise.all([loadPorts(), loadBackups(), loadRequirements(), loadApps(), loadReleases()]);
     } catch {
       state.bridgeOnline = false;
-      chip.className = "status-chip preview";
-      txt.textContent = "浏览器预览 / Web Serial 模式";
+      chip.className = "status-chip connected";
+      txt.textContent = "在线 Web Serial 直连模式";
       banner.style.display = "flex";
       bannerText.innerHTML =
-        "<strong>当前为浏览器模式</strong>：可直接使用 Chrome/Edge Web Serial 连接 COM5 查看串口日志，并体验需求工坊与 GitHub 应用广场；如需执行 <code>esptool</code> 全量 Flash 读取/恢复，请在本地双击 <code>start.bat</code> 启动硬件桥接服务。";
+        "<strong>已就绪（浏览器直连模式）</strong>：无需安装 Python！请使用 <strong>Chrome / Edge</strong> 点击「检测芯片信息」或「浏览器 Web Serial 直连」选择 <code>COM5</code>，即可直接读取、备份、恢复 ESP32 固件与查看串口日志。";
 
-      loadLocalStoragePreviewData();
+      loadBrowserSavedData();
       renderApps();
       loadReleases();
     }
   }
 
-  function loadLocalStoragePreviewData() {
+  function loadBrowserSavedData() {
     try {
-      state.backups = JSON.parse(localStorage.getItem("hermes_preview_backups") || "[]");
-      state.requirements = JSON.parse(localStorage.getItem("hermes_preview_reqs") || "[]");
+      state.backups = JSON.parse(localStorage.getItem("hermes_web_backups") || "[]");
+      state.requirements = JSON.parse(localStorage.getItem("hermes_web_reqs") || "[]");
     } catch {
       state.backups = [];
       state.requirements = [];
@@ -278,15 +431,30 @@
     renderRequirements();
   }
 
-  function savePreviewStorage() {
-    localStorage.setItem("hermes_preview_backups", JSON.stringify(state.backups));
-    localStorage.setItem("hermes_preview_reqs", JSON.stringify(state.requirements));
+  function saveBrowserData() {
+    localStorage.setItem("hermes_web_backups", JSON.stringify(state.backups));
+    localStorage.setItem("hermes_web_reqs", JSON.stringify(state.requirements));
   }
 
   // Ports & Chip Detection
   async function loadPorts() {
     if (!state.bridgeOnline) {
-      showToast("浏览器模式：点击「浏览器 Web Serial 直连」选择 COM5");
+      if (!("serial" in navigator)) {
+        showToast("请使用 Chrome / Edge 浏览器连接 COM5");
+        return;
+      }
+      try {
+        state.selectedEspPort = await navigator.serial.requestPort();
+        const info = state.selectedEspPort.getInfo();
+        const label = info.usbVendorId
+          ? `已授权 USB 串口 (VID:0x${info.usbVendorId.toString(16)})`
+          : "已授权 Web Serial 串口";
+        $("portSelect").innerHTML = `<option value="WebSerial">${label}</option>`;
+        $("metricPort").textContent = label;
+        showToast("已选择串口，点击「检测芯片信息」或「读取并备份原始固件」");
+      } catch (err) {
+        if (err.name !== "NotFoundError") showToast(`选择串口失败: ${err.message}`);
+      }
       return;
     }
     try {
@@ -320,16 +488,38 @@
   $("btnDetectChip").addEventListener("click", async () => {
     const port = $("portSelect").value;
     const baud = Number($("baudSelect").value);
-    $("esptoolConsole").textContent = `[检测] 正在通过 ${port} (${baud} bps) 连接 ESP32 芯片...`;
+    $("esptoolConsole").textContent = `[检测] 正在连接 ESP32 芯片 (${baud} bps)...`;
 
     if (!state.bridgeOnline) {
-      await new Promise((r) => setTimeout(r, 500));
-      $("metricChip").textContent = "ESP32-S3 (预览模拟)";
-      $("metricFlash").textContent = "16MB";
-      $("metricMac").textContent = "34:85:18:9A:2C:F0";
-      $("metricPort").textContent = port;
-      appendConsole("esptoolConsole", "[预览] 本地运行 start.bat 后将调用真实 esptool flash_id 获取板卡参数。");
-      showToast("预览模式已模拟芯片检测");
+      try {
+        await withWebEsploader(baud, async (loader, chip) => {
+          let flashMB = 4;
+          try {
+            const flashId = await loader.flashId();
+            const sizeCode = (flashId >> 16) & 0xff;
+            const sizeMap = { 0x15: 2, 0x16: 4, 0x17: 8, 0x18: 16, 0x19: 32 };
+            if (sizeMap[sizeCode]) flashMB = sizeMap[sizeCode];
+          } catch {}
+          state.detectedFlashMB = flashMB;
+
+          let mac = "已连接";
+          try {
+            if (loader.chip && typeof loader.chip.readMac === "function") {
+              mac = await loader.chip.readMac(loader);
+            }
+          } catch {}
+
+          $("metricChip").textContent = chip || "ESP32";
+          $("metricFlash").textContent = `${flashMB}MB`;
+          $("metricMac").textContent = mac;
+          $("metricPort").textContent = "Web Serial (COM)";
+          appendConsole("esptoolConsole", `\n[成功] 识别到芯片: ${chip} | Flash: ${flashMB}MB | MAC: ${mac}`);
+          showToast(`识别成功: ${chip} (${flashMB}MB)`);
+        });
+      } catch (err) {
+        appendConsole("esptoolConsole", `\n[错误] ${err.message}`);
+        showToast("连接失败：请确认已选择 COM5，若仍失败可按住板子 BOOT 键再点检测");
+      }
       return;
     }
 
@@ -355,7 +545,7 @@
     }
   });
 
-  // Task Poller (Backup / Restore / Flash)
+  // Task Poller (Local Bridge Backup / Restore / Flash)
   async function pollTask(taskId, label) {
     setProgress(`${label} 进行中...`, 5, true);
     let lastLogLen = 0;
@@ -391,35 +581,65 @@
     const baud = Number($("baudSelect").value);
     const flash_size = $("flashSizeSelect").value;
     const label = $("backupLabel").value.trim() || "factory-backup";
-    const version = $("backupVersion").value.trim() || "v1.0.0";
+    const version = $("backupVersion").value.trim() || "v1.1.0";
     const notes = $("backupNotes").value.trim();
 
-    $("esptoolConsole").textContent = `[备份] 开始读取 ${port} 原始 Flash (${flash_size})...`;
+    $("esptoolConsole").textContent = `[备份] 开始读取原始 Flash (${flash_size})...`;
 
     if (!state.bridgeOnline) {
-      for (const pct of [15, 42, 76, 100]) {
-        setProgress("模拟读取原始 Flash...", pct, true);
-        appendConsole("esptoolConsole", `Reading Flash... (${pct} %)`);
-        await new Promise((r) => setTimeout(r, 260));
+      try {
+        setProgress("连接开发板准备读取...", 2, true);
+        await withWebEsploader(baud, async (loader, chip) => {
+          let readBytes = flashSizeToBytes(flash_size);
+          if (flash_size === "ALL") {
+            try {
+              const flashId = await loader.flashId();
+              const sizeCode = (flashId >> 16) & 0xff;
+              const sizeMap = { 0x15: 2, 0x16: 4, 0x17: 8, 0x18: 16, 0x19: 32 };
+              if (sizeMap[sizeCode]) {
+                state.detectedFlashMB = sizeMap[sizeCode];
+                readBytes = state.detectedFlashMB * 1024 * 1024;
+              }
+            } catch {}
+          }
+          appendConsole("esptoolConsole", `\n[读取] 目标容量 ${formatBytes(readBytes)}，请保持 USB 连接不要拔出...`);
+          let received = 0;
+          const data = await loader.readFlash(0x0, readBytes, (packet) => {
+            received += packet.length;
+            const pct = Math.min(99, Math.round((received / readBytes) * 100));
+            setProgress(`正在读取原始 Flash (${formatBytes(received)} / ${formatBytes(readBytes)})`, pct, true);
+          });
+
+          const sha256 = await computeSha256Hex(data);
+          const id = `bkp_${Date.now()}`;
+          const safeLabel = label.replace(/[^a-zA-Z0-9_\-\u4e00-\u9fa5]/g, "_");
+          const filename = `${id}_${safeLabel}.bin`;
+          await saveBlobToIDB(id, data);
+
+          state.backups.unshift({
+            id,
+            filename,
+            label,
+            version,
+            chip: chip || state.chip,
+            port: "Web Serial",
+            flashSize: `${Math.round(readBytes / 1048576)}MB`,
+            notes,
+            sizeBytes: data.length,
+            sha256,
+            createdAt: new Date().toISOString(),
+          });
+          saveBrowserData();
+          renderBackups();
+          setProgress("读取并备份完成！", 100, true);
+          appendConsole("esptoolConsole", `\n[完成] 已保存备份 ${filename} (SHA-256: ${sha256.slice(0, 16)}...)`);
+          triggerDownloadBlob(data, filename);
+          showToast("原始固件备份成功并已开始下载 .bin！");
+        });
+      } catch (err) {
+        appendConsole("esptoolConsole", `\n[错误] ${err.message}`);
+        showToast(`备份失败: ${err.message}`);
       }
-      const fakeId = `bkp_${Date.now()}`;
-      state.backups.unshift({
-        id: fakeId,
-        filename: `${fakeId}_${label}.bin`,
-        label,
-        version,
-        chip: state.chip,
-        port,
-        flashSize: flash_size === "ALL" ? "16MB" : flash_size,
-        notes: notes || "浏览器预览模式演示备份",
-        sizeBytes: 16777216,
-        sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        createdAt: new Date().toISOString(),
-        preview: true,
-      });
-      savePreviewStorage();
-      renderBackups();
-      showToast("预览备份已创建（本地运行 start.bat 可读取真实板卡 .bin）");
       return;
     }
 
@@ -466,7 +686,7 @@
       <tr>
         <td>
           <strong>${escapeHtml(b.label)}</strong>
-          <span class="tag tag-accent mono" style="margin-left:6px;">${escapeHtml(b.version || "v1.0.0")}</span>
+          <span class="tag tag-accent mono" style="margin-left:6px;">${escapeHtml(b.version || "v1.1.0")}</span>
           ${b.notes ? `<div style="font-size:12px;color:var(--ink-muted);margin-top:2px;">${escapeHtml(b.notes)}</div>` : ""}
         </td>
         <td><span class="mono">${escapeHtml(b.chip || "ESP32")}</span> · ${escapeHtml(b.flashSize || "ALL")}</td>
@@ -485,14 +705,42 @@
       .join("");
   }
 
+  async function flashUint8ArrayViaWebSerial(uint8Array, addressNum, baud, label) {
+    setProgress(`准备写入 ${label}...`, 2, true);
+    await withWebEsploader(baud, async (loader) => {
+      await loader.writeFlash({
+        fileArray: [{ data: uint8Array, address: addressNum }],
+        flashSize: "keep",
+        flashMode: "keep",
+        flashFreq: "keep",
+        eraseAll: false,
+        compress: true,
+        reportProgress: (_idx, written, total) => {
+          const pct = Math.min(99, Math.round((written / total) * 100));
+          setProgress(`正在写入 ${label} (${pct}%)`, pct, true);
+        },
+      });
+      await loader.after();
+      setProgress(`${label} 烧录完成！`, 100, true);
+      appendConsole("esptoolConsole", `\n[成功] ${label} 已写入完成并重启开发板。`);
+      showToast(`${label} 烧录成功！`);
+    });
+  }
+
   $("backupsTableBody").addEventListener("click", async (e) => {
     const btn = e.target.closest("button[data-action]");
     if (!btn) return;
     const { action, id } = btn.dataset;
+    const bkp = state.backups.find((b) => b.id === id);
 
     if (action === "download") {
       if (!state.bridgeOnline) {
-        showToast("预览备份不含真实二进制，本地启动 start.bat 后可下载真实 .bin");
+        const blob = await loadBlobFromIDB(id);
+        if (!blob) {
+          showToast("浏览器本地缓存中未找到该 .bin 文件");
+          return;
+        }
+        triggerDownloadBlob(blob, bkp?.filename || `${id}.bin`);
         return;
       }
       window.location.href = `/api/backups/${encodeURIComponent(id)}/download`;
@@ -502,16 +750,18 @@
     if (action === "restore") {
       const port = $("portSelect").value;
       const baud = Number($("baudSelect").value);
-      if (!confirm(`确定要将备份恢复到 ${port} 吗？这将覆盖板卡当前 Flash 内容。`)) return;
+      if (!confirm("确定要将该备份恢复到开发板吗？这会覆盖当前 Flash 内容。")) return;
 
-      $("esptoolConsole").textContent = `[恢复] 正在向 ${port} 写入备份 ${id}...`;
+      $("esptoolConsole").textContent = `[恢复] 正在写入备份 ${bkp?.filename || id}...`;
       if (!state.bridgeOnline) {
-        for (const pct of [25, 60, 100]) {
-          setProgress("模拟恢复原始固件...", pct, true);
-          appendConsole("esptoolConsole", `Writing at 0x00000000... (${pct} %)`);
-          await new Promise((r) => setTimeout(r, 250));
+        try {
+          const blob = await loadBlobFromIDB(id);
+          if (!blob) throw new Error("未找到备份二进制数据，请重新上传本地 .bin 烧录");
+          await flashUint8ArrayViaWebSerial(blob, 0x0, baud, bkp?.filename || "原始备份");
+        } catch (err) {
+          appendConsole("esptoolConsole", `\n[错误] ${err.message}`);
+          showToast(`恢复失败: ${err.message}`);
         }
-        showToast("预览模式已模拟恢复完成");
         return;
       }
 
@@ -535,9 +785,10 @@
       if (!confirm("确定删除这条备份档案吗？")) return;
       if (!state.bridgeOnline) {
         state.backups = state.backups.filter((b) => b.id !== id);
-        savePreviewStorage();
+        saveBrowserData();
+        await deleteBlobFromIDB(id);
         renderBackups();
-        showToast("已删除备份记录");
+        showToast("已删除备份档案");
         return;
       }
       await fetch(`/api/backups/${encodeURIComponent(id)}`, { method: "DELETE" });
@@ -557,21 +808,29 @@
       return;
     }
     const port = $("portSelect").value;
-    const baud = $("baudSelect").value;
-    const address = $("flashAddrInput").value.trim() || "0x0";
+    const baud = Number($("baudSelect").value);
+    const addressStr = $("flashAddrInput").value.trim() || "0x0";
 
     if (!state.bridgeOnline) {
-      showToast("请在本地运行 start.bat 后使用 .bin 固件烧录功能");
+      try {
+        const buf = new Uint8Array(await file.arrayBuffer());
+        const addrNum = parseInt(addressStr, 16) || 0;
+        $("esptoolConsole").textContent = `[烧录] 正在通过 Web Serial 写入 ${file.name} 至 0x${addrNum.toString(16)}...`;
+        await flashUint8ArrayViaWebSerial(buf, addrNum, baud, file.name);
+      } catch (err) {
+        appendConsole("esptoolConsole", `\n[错误] ${err.message}`);
+        showToast(`烧录失败: ${err.message}`);
+      }
       return;
     }
 
     const fd = new FormData();
     fd.append("port", port);
-    fd.append("baud", baud);
-    fd.append("address", address);
+    fd.append("baud", String(baud));
+    fd.append("address", addressStr);
     fd.append("file", file);
 
-    $("esptoolConsole").textContent = `[烧录] 正在上传并写入 ${file.name} 至 ${port} (${address})...`;
+    $("esptoolConsole").textContent = `[烧录] 正在上传并写入 ${file.name} 至 ${port} (${addressStr})...`;
     try {
       const res = await fetch("/api/flash", { method: "POST", body: fd });
       const data = await res.json();
@@ -619,7 +878,8 @@
     }
     try {
       const baudRate = Number($("serialBaudSelect").value);
-      const port = await navigator.serial.requestPort();
+      const port = state.selectedEspPort || (await navigator.serial.requestPort());
+      state.selectedEspPort = port;
       await port.open({ baudRate });
       state.webSerialPort = port;
       state.serialConnected = true;
@@ -648,7 +908,7 @@
 
   $("btnWebSerialQuick").addEventListener("click", () => {
     switchTab("device");
-    connectWebSerial();
+    loadPorts();
   });
 
   $("btnSerialToggle").addEventListener("click", async () => {
@@ -810,7 +1070,7 @@
         starterCode: buildClientStarterCode(payload.title, payload.board, payload.framework, payload.description, version),
         createdAt: new Date().toISOString(),
       });
-      savePreviewStorage();
+      saveBrowserData();
       renderRequirements();
       $("reqForm").reset();
       showToast(`已生成需求 ${version} 及代码框架`);
@@ -847,7 +1107,7 @@
       const next = order[(order.indexOf(item.status) + 1) % order.length];
       if (!state.bridgeOnline) {
         item.status = next;
-        savePreviewStorage();
+        saveBrowserData();
         renderRequirements();
       } else {
         await fetch(`/api/requirements/${encodeURIComponent(id)}`, {
@@ -863,7 +1123,7 @@
     if (reqAction === "delete") {
       if (!state.bridgeOnline) {
         state.requirements = state.requirements.filter((r) => r.id !== id);
-        savePreviewStorage();
+        saveBrowserData();
         renderRequirements();
       } else {
         await fetch(`/api/requirements/${encodeURIComponent(id)}`, { method: "DELETE" });
