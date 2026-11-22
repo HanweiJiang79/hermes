@@ -460,6 +460,9 @@
       await Promise.all([loadPorts(), loadBackups(), loadRequirements(), loadApps(), loadReleases()]);
     } catch {
       state.bridgeOnline = false;
+      $("appVersionBadge").textContent = `v${APP_VERSION}`;
+      $("releaseCurrentVer").textContent = `v${APP_VERSION}`;
+      $("footerVersion").textContent = `v${APP_VERSION}`;
       chip.className = "status-chip connected";
       txt.textContent = "在线 USB 串口直连模式";
       banner.style.display = "flex";
