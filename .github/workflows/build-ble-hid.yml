@@ -1,0 +1,65 @@
+name: Build ESP32-S3 BLE HID Firmware
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "firmware/ble_hid_ipad/**"
+      - ".github/workflows/build-ble-hid.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PlatformIO & esptool
+        run: |
+          pip install -U platformio esptool
+
+      - name: Build ESP32-S3 BLE HID firmware
+        working-directory: firmware/ble_hid_ipad
+        run: |
+          pio run
+
+      - name: Merge into single 0x0 flashable .bin
+        working-directory: firmware/ble_hid_ipad
+        run: |
+          BUILD_DIR=".pio/build/esp32-s3-devkitc-1"
+          BOOT_APP0=$(find "$HOME/.platformio/packages/framework-arduinoespressif32" -name "boot_app0.bin" | head -n 1)
+          python -m esptool --chip esp32s3 merge_bin \
+            -o hermes-esp32s3-ble-hid-v1.0.0-merged.bin \
+            --flash_mode dio --flash_freq 80m --flash_size 4MB \
+            0x0 "$BUILD_DIR/bootloader.bin" \
+            0x8000 "$BUILD_DIR/partitions.bin" \
+            0xe000 "$BOOT_APP0" \
+            0x10000 "$BUILD_DIR/firmware.bin"
+          ls -lh hermes-esp32s3-ble-hid-v1.0.0-merged.bin
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hermes-esp32s3-ble-hid-v1.0.0
+          path: firmware/ble_hid_ipad/hermes-esp32s3-ble-hid-v1.0.0-merged.bin
+
+      - name: Publish firmware to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="ble-hid-v1.0.0"
+          BIN="firmware/ble_hid_ipad/hermes-esp32s3-ble-hid-v1.0.0-merged.bin"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$BIN" --clobber
+          else
+            gh release create "$TAG" "$BIN" \
+              --title "ESP32-S3 蓝牙键鼠控制 iPad 固件 (ble-hid-v1.0.0)" \
+              --notes "直接下载 \`hermes-esp32s3-ble-hid-v1.0.0-merged.bin\`，在 Hermes ESP32 Studio 网页版「设备与备份 → 烧录新固件」中选择该文件、烧录地址填 \`0x0\` 即可一键烧录到 ESP32-S3！配对蓝牙名：\`Hermes-iPad-HID\`。"
+          fi
