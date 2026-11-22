@@ -4,7 +4,7 @@
  *  2) Local Python FastAPI + esptool bridge (start.bat)
  */
 (() => {
-  const APP_VERSION = "1.2.0";
+  const APP_VERSION = "1.2.1";
   const GITHUB_REPO = "HanweiJiang79/hermes";
 
   const FALLBACK_APPS = [
@@ -335,6 +335,55 @@
     };
   }
 
+  // Common USB-to-Serial vendor IDs for ESP32 boards (defaults browser picker to USB ports)
+  const ESP32_USB_FILTERS = [
+    { usbVendorId: 0x1a86 }, // WCH CH340 / CH341 / CH9102 (USB Single Serial)
+    { usbVendorId: 0x10c4 }, // Silicon Labs CP210x
+    { usbVendorId: 0x303a }, // Espressif native USB JTAG/Serial (ESP32-S3/C3/C6)
+    { usbVendorId: 0x0403 }, // FTDI
+  ];
+
+  function formatUsbPortLabel(port) {
+    const info = port?.getInfo ? port.getInfo() : {};
+    const vidMap = { 0x1a86: "USB Single Serial (CH34x)", 0x10c4: "USB CP210x", 0x303a: "ESP32 USB JTAG/Serial", 0x0403: "USB FTDI" };
+    if (info.usbVendorId && vidMap[info.usbVendorId]) {
+      return `${vidMap[info.usbVendorId]} [已默认绑定]`;
+    }
+    if (info.usbVendorId) {
+      return `USB 串口 (VID:0x${info.usbVendorId.toString(16)})`;
+    }
+    return "USB 串口（Web Serial）";
+  }
+
+  function applySelectedUsbPort(port) {
+    state.selectedEspPort = port;
+    const label = formatUsbPortLabel(port);
+    $("portSelect").innerHTML = `<option value="WebSerial">${label}</option>`;
+    $("metricPort").textContent = label;
+  }
+
+  async function requestUsbSerialPort() {
+    try {
+      return await navigator.serial.requestPort({ filters: ESP32_USB_FILTERS });
+    } catch (err) {
+      if (err.name === "NotFoundError") throw err;
+      return await navigator.serial.requestPort();
+    }
+  }
+
+  async function restoreAuthorizedUsbPort() {
+    if (!("serial" in navigator)) return;
+    try {
+      const ports = await navigator.serial.getPorts();
+      if (!ports.length) return;
+      const usbPort = ports.find((p) => {
+        const vid = p.getInfo()?.usbVendorId;
+        return vid && ESP32_USB_FILTERS.some((f) => f.usbVendorId === vid);
+      }) || ports[0];
+      applySelectedUsbPort(usbPort);
+    } catch {}
+  }
+
   async function ensureWebSerialEspPort() {
     if (!("serial" in navigator)) {
       throw new Error("当前浏览器不支持 Web Serial API，请使用最新版 Chrome 或 Edge 浏览器打开本页面。");
@@ -343,7 +392,11 @@
       await disconnectSerial();
     }
     if (!state.selectedEspPort) {
-      state.selectedEspPort = await navigator.serial.requestPort();
+      await restoreAuthorizedUsbPort();
+    }
+    if (!state.selectedEspPort) {
+      const port = await requestUsbSerialPort();
+      applySelectedUsbPort(port);
     }
     return state.selectedEspPort;
   }
@@ -408,11 +461,12 @@
     } catch {
       state.bridgeOnline = false;
       chip.className = "status-chip connected";
-      txt.textContent = "在线 Web Serial 直连模式";
+      txt.textContent = "在线 USB 串口直连模式";
       banner.style.display = "flex";
       bannerText.innerHTML =
-        "<strong>已就绪（浏览器直连模式）</strong>：无需安装 Python！请使用 <strong>Chrome / Edge</strong> 点击「检测芯片信息」或「浏览器 Web Serial 直连」选择 <code>COM5</code>，即可直接读取、备份、恢复 ESP32 固件与查看串口日志。";
+        "<strong>已就绪（USB 串口直连）</strong>：默认筛选 ESP32 USB 串口（CH340/CP210x/ESP32-S3）。首次点击「允许」授权后，后续打开页面将自动默认记住该 USB 端口，无需重复选择。";
 
+      await restoreAuthorizedUsbPort();
       loadBrowserSavedData();
       renderApps();
       loadReleases();
@@ -440,18 +494,13 @@
   async function loadPorts() {
     if (!state.bridgeOnline) {
       if (!("serial" in navigator)) {
-        showToast("请使用 Chrome / Edge 浏览器连接 COM5");
+        showToast("请使用 Chrome / Edge 浏览器连接 USB 串口");
         return;
       }
       try {
-        state.selectedEspPort = await navigator.serial.requestPort();
-        const info = state.selectedEspPort.getInfo();
-        const label = info.usbVendorId
-          ? `已授权 USB 串口 (VID:0x${info.usbVendorId.toString(16)})`
-          : "已授权 Web Serial 串口";
-        $("portSelect").innerHTML = `<option value="WebSerial">${label}</option>`;
-        $("metricPort").textContent = label;
-        showToast("已选择串口，点击「检测芯片信息」或「读取并备份原始固件」");
+        const port = await requestUsbSerialPort();
+        applySelectedUsbPort(port);
+        showToast("已绑定 USB 串口，后续将自动默认连接该端口");
       } catch (err) {
         if (err.name !== "NotFoundError") showToast(`选择串口失败: ${err.message}`);
       }
@@ -878,8 +927,8 @@
     }
     try {
       const baudRate = Number($("serialBaudSelect").value);
-      const port = state.selectedEspPort || (await navigator.serial.requestPort());
-      state.selectedEspPort = port;
+      const port = state.selectedEspPort || (await requestUsbSerialPort());
+      applySelectedUsbPort(port);
       await port.open({ baudRate });
       state.webSerialPort = port;
       state.serialConnected = true;
