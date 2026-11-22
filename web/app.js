@@ -4,7 +4,7 @@
  *  2) Local Python FastAPI + esptool bridge (start.bat)
  */
 (() => {
-  const APP_VERSION = "1.3.0";
+  const APP_VERSION = "2.0.0";
   const GITHUB_REPO = "HanweiJiang79/hermes";
 
   const FALLBACK_APPS = [
@@ -944,6 +944,13 @@
   function logSerialBoth(line) {
     appendConsole("serialConsole", line);
     if ($("remoteLog")) appendConsole("remoteLog", line);
+    if (line && line.includes("TELEM:")) {
+      const idx = line.indexOf("TELEM:");
+      try {
+        const data = JSON.parse(line.slice(idx + 6).trim());
+        handleSensorTelemetry(data);
+      } catch {}
+    }
   }
 
   async function connectWebSerial() {
@@ -1106,6 +1113,239 @@
       if (e.key === "Enter") sendRemoteType(false);
     });
   }
+
+  // 1) PC Physical Keyboard -> iPad Passthrough
+  let kbdCaptureActive = false;
+  if ($("btnKbdCapture")) {
+    $("btnKbdCapture").addEventListener("click", () => {
+      kbdCaptureActive = !kbdCaptureActive;
+      $("btnKbdCapture").textContent = kbdCaptureActive ? "停止键盘接管 (ESC 退出)" : "开启电脑键盘接管";
+      $("btnKbdCapture").classList.toggle("btn-primary", kbdCaptureActive);
+      $("btnKbdCapture").classList.toggle("btn-dark", !kbdCaptureActive);
+      showToast(kbdCaptureActive ? "键盘接管已开启：直接敲电脑键盘即可控制 iPad！" : "已退出键盘接管模式");
+    });
+  }
+
+  document.addEventListener("keydown", async (e) => {
+    if (!kbdCaptureActive) return;
+    const tag = (e.target && e.target.tagName) || "";
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+    if (e.key === "Escape") {
+      kbdCaptureActive = false;
+      if ($("btnKbdCapture")) {
+        $("btnKbdCapture").textContent = "开启电脑键盘接管";
+        $("btnKbdCapture").classList.remove("btn-primary");
+        $("btnKbdCapture").classList.add("btn-dark");
+      }
+      showToast("已按 ESC 退出键盘接管模式");
+      return;
+    }
+    e.preventDefault();
+    const specialMap = {
+      ArrowUp: "UP",
+      ArrowDown: "DOWN",
+      ArrowLeft: "LEFT",
+      ArrowRight: "RIGHT",
+      Enter: "ENTER",
+      Backspace: "BACKSPACE",
+      Tab: "TAB",
+      " ": "SPACE",
+    };
+    if (specialMap[e.key]) {
+      await sendRawSerialLine(specialMap[e.key]);
+    } else if (e.key.length === 1 && e.key.charCodeAt(0) >= 32 && e.key.charCodeAt(0) < 127) {
+      await sendRawSerialLine(`TYPE:${e.key}`);
+    }
+  });
+
+  // 2) Chinese Voice Remote (Web Speech API)
+  let voiceRec = null;
+  let voiceActive = false;
+  function mapVoiceToCmd(text) {
+    if (text.includes("下一首") || text.includes("切歌")) return "NEXT";
+    if (text.includes("上一首")) return "PREV";
+    if (text.includes("暂停") || text.includes("播放")) return "PLAY";
+    if (text.includes("声音大") || text.includes("音量加") || text.includes("大声")) return "VOL+";
+    if (text.includes("声音小") || text.includes("音量减") || text.includes("小声")) return "VOL-";
+    if (text.includes("静音")) return "MUTE";
+    if (text.includes("桌面") || text.includes("主页") || text.includes("主屏")) return "HOME";
+    if (text.includes("搜索")) return "SPOTLIGHT";
+    if (text.includes("锁屏") || text.includes("关屏")) return "LOCK";
+    if (text.includes("翻页") || text.includes("下一页")) return "RIGHT";
+    if (text.includes("上一页")) return "LEFT";
+    return null;
+  }
+
+  if ($("btnVoiceRemote")) {
+    $("btnVoiceRemote").addEventListener("click", () => {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) {
+        showToast("当前浏览器不支持语音识别，请使用 Chrome 或 Edge");
+        return;
+      }
+      if (voiceActive && voiceRec) {
+        voiceRec.stop();
+        voiceActive = false;
+        $("btnVoiceRemote").textContent = "语音口令控制";
+        return;
+      }
+      voiceRec = new SR();
+      voiceRec.lang = "zh-CN";
+      voiceRec.continuous = true;
+      voiceRec.interimResults = false;
+      voiceRec.onresult = async (ev) => {
+        const transcript = ev.results[ev.results.length - 1][0].transcript.trim();
+        logSerialBoth(`[语音识别] "${transcript}"`);
+        const cmd = mapVoiceToCmd(transcript);
+        if (cmd) {
+          await sendRawSerialLine(cmd);
+          showToast(`语音触发：${transcript} → ${cmd}`);
+        } else {
+          showToast(`未匹配口令：“${transcript}”（可说：下一首/暂停/声音大/主屏/锁屏/翻页）`);
+        }
+      };
+      voiceRec.onerror = () => {
+        voiceActive = false;
+        $("btnVoiceRemote").textContent = "语音口令控制";
+      };
+      voiceRec.onend = () => {
+        voiceActive = false;
+        $("btnVoiceRemote").textContent = "语音口令控制";
+      };
+      voiceRec.start();
+      voiceActive = true;
+      $("btnVoiceRemote").textContent = "聆听中... (点击停止)";
+      showToast("请说中文口令：下一首 / 暂停 / 声音大 / 主屏 / 锁屏 / 翻页");
+    });
+  }
+
+  // 3) One-Click App Macros & Auto-Pager
+  if ($("view-remote")) {
+    $("view-remote").addEventListener("click", async (e) => {
+      const macroBtn = e.target.closest("[data-macro-app]");
+      if (!macroBtn) return;
+      const appName = macroBtn.dataset.macroApp;
+      showToast(`正在执行一键宏：打开 ${appName}`);
+      if (!(await sendRawSerialLine("SPOTLIGHT"))) return;
+      await new Promise((r) => setTimeout(r, 450));
+      await sendRawSerialLine(`TYPE:${appName}`);
+      await new Promise((r) => setTimeout(r, 450));
+      await sendRawSerialLine("ENTER");
+    });
+  }
+
+  let autoPageTimer = null;
+  if ($("btnAutoPageToggle")) {
+    $("btnAutoPageToggle").addEventListener("click", () => {
+      if (autoPageTimer) {
+        clearInterval(autoPageTimer);
+        autoPageTimer = null;
+        $("btnAutoPageToggle").textContent = "启动自动翻页";
+        showToast("已停止自动翻页");
+        return;
+      }
+      const ms = Number($("autoPageInterval").value) || 5000;
+      const key = $("autoPageKey").value || "RIGHT";
+      sendRawSerialLine(key);
+      autoPageTimer = setInterval(() => sendRawSerialLine(key), ms);
+      $("btnAutoPageToggle").textContent = `停止翻页 (${ms / 1000}s)`;
+      showToast(`已启动自动翻页：每 ${ms / 1000} 秒发送 ${key}`);
+    });
+  }
+
+  // 4) Wi-Fi Standalone Config
+  if ($("btnWifiConfig")) {
+    $("btnWifiConfig").addEventListener("click", async () => {
+      const ssid = $("wifiSsidInput").value.trim();
+      const pass = $("wifiPassInput").value;
+      if (!ssid) {
+        showToast("请输入 2.4GHz Wi-Fi 名称");
+        return;
+      }
+      const ok = await sendRawSerialLine(`WIFI:${ssid},${pass}`);
+      if (ok) showToast("已发送 Wi-Fi 配网指令，请在下方回执查看局域网 IP");
+    });
+  }
+
+  // 5) Live Sensor Monitor & Canvas Waveform Chart
+  const sensorSamples = [];
+  function drawSensorChart() {
+    const canvas = $("sensorChartCanvas");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    // Subtle horizontal grid lines
+    ctx.strokeStyle = "#e4e4e7";
+    ctx.lineWidth = 1;
+    for (let i = 1; i <= 4; i++) {
+      const y = (h / 5) * i;
+      ctx.beginPath();
+      ctx.moveTo(46, y);
+      ctx.lineTo(w - 16, y);
+      ctx.stroke();
+    }
+
+    if (!sensorSamples.length) {
+      ctx.fillStyle = "#71717a";
+      ctx.font = "13px Inter, sans-serif";
+      ctx.fillText("点击右上角「开启实时采集」后，这里将实时绘制 ESP32 温度波形曲线...", 60, h / 2);
+      return;
+    }
+
+    const temps = sensorSamples.map((s) => s.temp);
+    const minT = Math.floor(Math.min(...temps) - 2);
+    const maxT = Math.ceil(Math.max(...temps) + 2);
+    const span = Math.max(1, maxT - minT);
+
+    ctx.fillStyle = "#71717a";
+    ctx.font = "11px JetBrains Mono, monospace";
+    ctx.fillText(`${maxT}°C`, 8, 22);
+    ctx.fillText(`${minT}°C`, 8, h - 10);
+
+    ctx.strokeStyle = "#2563eb";
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    sensorSamples.forEach((s, idx) => {
+      const x = 48 + ((w - 68) * idx) / Math.max(1, sensorSamples.length - 1);
+      const y = h - 20 - ((s.temp - minT) / span) * (h - 40);
+      if (idx === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+
+  function handleSensorTelemetry(data) {
+    if (typeof data.temp === "number") {
+      if ($("sensorTempVal")) $("sensorTempVal").textContent = `${data.temp.toFixed(1)} °C`;
+      sensorSamples.push({ temp: data.temp, ts: Date.now() });
+      if (sensorSamples.length > 60) sensorSamples.shift();
+      if ($("sensorSampleCount")) $("sensorSampleCount").textContent = `${sensorSamples.length} 个采样点`;
+      drawSensorChart();
+    }
+    if ($("sensorI2cVal")) {
+      $("sensorI2cVal").textContent = data.i2c ? `${data.i2c} 个 (${data.i2cAddrs || ""})` : "0 个 (未外接)";
+    }
+    if ($("sensorPresenceVal")) {
+      $("sensorPresenceVal").textContent = data.presence ? "检测到信号 (HIGH)" : "空闲 (LOW)";
+    }
+    if ($("sensorHeapVal") && typeof data.heapKB === "number") {
+      $("sensorHeapVal").textContent = `${data.heapKB} KB · ${data.uptime || 0}s`;
+    }
+  }
+
+  if ($("btnSensorStart")) {
+    $("btnSensorStart").addEventListener("click", () => sendRawSerialLine("SENSOR:START"));
+  }
+  if ($("btnSensorStop")) {
+    $("btnSensorStop").addEventListener("click", () => sendRawSerialLine("SENSOR:STOP"));
+  }
+  if ($("btnI2cScan")) {
+    $("btnI2cScan").addEventListener("click", () => sendRawSerialLine("I2C:SCAN"));
+  }
+  drawSensorChart();
 
   // Feature Studio (Recommended Sensors + Requirements)
   const RECOMMENDED_SENSORS = [

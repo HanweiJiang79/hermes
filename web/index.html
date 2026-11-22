@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Hermes ESP32 Studio v1.3.0 — ESP32 固件备份、iPad 遥控与开源应用平台</title>
-  <meta name="description" content="用于 ESP32 开发板的交互式测试与管理工具：原始固件读取/备份/恢复、iPad 蓝牙可视化遥控器、串口监视器、功能需求工坊、GitHub 最新 ESP32 应用广场及版本发布管理。" />
+  <title>Hermes ESP32 Studio v2.0.0 — ESP32 全能测试、iPad 遥控与传感器监控平台</title>
+  <meta name="description" content="用于 ESP32 开发板的交互式测试与管理工具：原始固件读取/备份/恢复、iPad 蓝牙可视化遥控器（键盘接管/语音控制/宏/Wi-Fi脱机）、传感器实时波形监控、功能需求工坊与 GitHub 开源应用广场。" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=1.3.0" />
+  <link rel="stylesheet" href="styles.css?v=2.0.0" />
 </head>
 <body>
   <header class="topbar">
@@ -16,12 +16,13 @@
       <div class="brand">
         <div class="brand-mark" aria-hidden="true">E32</div>
         <h1 class="brand-title">Hermes ESP32 Studio</h1>
-        <span class="version-tag" id="appVersionBadge">v1.3.0</span>
+        <span class="version-tag" id="appVersionBadge">v2.0.0</span>
       </div>
 
       <nav class="nav-tabs" aria-label="主导航">
         <button class="nav-tab active" data-tab="device" id="tabBtnDevice">设备与备份</button>
         <button class="nav-tab" data-tab="remote" id="tabBtnRemote">iPad 遥控器</button>
+        <button class="nav-tab" data-tab="sensors" id="tabBtnSensors">传感器监控</button>
         <button class="nav-tab" data-tab="requirements" id="tabBtnRequirements">需求工坊</button>
         <button class="nav-tab" data-tab="apps" id="tabBtnApps">ESP32 应用广场</button>
         <button class="nav-tab" data-tab="releases" id="tabBtnReleases">版本与发布</button>
@@ -217,6 +218,42 @@
           </table>
         </div>
       </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h3 class="panel-title">云端编译固件库（GitHub Releases）</h3>
+            <p class="panel-subtitle">下载对应版本的合并固件后，在上方「2. 烧录新固件」选择文件并保持地址 <code>0x0</code> 即可快速切换功能。</p>
+          </div>
+          <a class="btn btn-sm" href="https://github.com/HanweiJiang79/hermes/releases" target="_blank" rel="noopener">查看全部 Release</a>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>固件名称与版本</th>
+                <th>适用芯片</th>
+                <th>功能亮点</th>
+                <th>下载</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Hermes 全能 iPad 遥控 + Wi-Fi + 传感器版</strong> <span class="tag tag-success mono">ble-hid-v2.0.0</span></td>
+                <td class="mono">ESP32-S3</td>
+                <td>蓝牙键鼠/媒体控制 + 脱机 Wi-Fi 网页遥控 + 芯片/I2C 实时遥测 + BOOT 长短按</td>
+                <td><a class="btn btn-sm btn-primary" href="https://github.com/HanweiJiang79/hermes/releases/download/ble-hid-v2.0.0/hermes-esp32s3-ble-hid-v2.0.0-merged.bin" target="_blank" rel="noopener">下载 .bin (0x0)</a></td>
+              </tr>
+              <tr>
+                <td><strong>Hermes 精简蓝牙键鼠版</strong> <span class="tag mono">ble-hid-v1.0.0</span></td>
+                <td class="mono">ESP32-S3</td>
+                <td>轻量纯蓝牙 HID 键盘、鼠标与 iPad 媒体控制</td>
+                <td><a class="btn btn-sm" href="https://github.com/HanweiJiang79/hermes/releases/download/ble-hid-v1.0.0/hermes-esp32s3-ble-hid-v1.0.0-merged.bin" target="_blank" rel="noopener">下载 .bin (0x0)</a></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
     <!-- VIEW: IPAD BLUETOOTH REMOTE -->
@@ -224,11 +261,13 @@
       <div class="page-header">
         <div>
           <h2>iPad 蓝牙可视化遥控器</h2>
-          <p>通过 USB 串口向 ESP32-S3（<code>Hermes-iPad-HID</code>）发送指令，一键控制已配对的 iPad mini 3。</p>
+          <p>支持按钮点击、<strong>电脑物理键盘接管</strong>、<strong>中文语音口令</strong>、<strong>一键宏/自动翻页</strong>与 <strong>Wi-Fi 脱机网页遥控</strong>。</p>
         </div>
         <div class="btn-row">
           <span class="status-chip" id="remoteConnBadge"><span class="status-dot"></span><span id="remoteConnText">未连接串口</span></span>
           <button class="btn btn-primary" id="btnRemoteConnect">连接控制串口</button>
+          <button class="btn btn-dark" id="btnKbdCapture">开启电脑键盘接管</button>
+          <button class="btn" id="btnVoiceRemote">语音口令控制</button>
           <button class="btn" data-remote-cmd="STATUS">检查蓝牙状态</button>
         </div>
       </div>
@@ -324,12 +363,117 @@
         </div>
       </div>
 
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h3 class="panel-title">一键宏 & 阅读自动翻页器</h3>
+              <p class="panel-subtitle">组合多步按键一键启动 iPad App，或定时自动翻页看书 / 放 PPT。</p>
+            </div>
+          </div>
+          <div class="btn-row" style="margin-bottom: 12px;">
+            <button class="btn btn-sm btn-dark" data-macro-app="Music">一键打开音乐</button>
+            <button class="btn btn-sm btn-dark" data-macro-app="Notes">一键打开备忘录</button>
+            <button class="btn btn-sm btn-dark" data-macro-app="Safari">一键打开 Safari</button>
+            <button class="btn btn-sm btn-dark" data-macro-app="Settings">一键打开设置</button>
+          </div>
+          <div class="toolbar" style="padding-top: 10px; border-top: 1px solid var(--border);">
+            <div class="field narrow">
+              <label for="autoPageInterval">翻页间隔</label>
+              <select id="autoPageInterval">
+                <option value="3000">每 3 秒</option>
+                <option value="5000" selected>每 5 秒</option>
+                <option value="10000">每 10 秒</option>
+                <option value="15000">每 15 秒</option>
+                <option value="30000">每 30 秒</option>
+              </select>
+            </div>
+            <div class="field narrow">
+              <label for="autoPageKey">触发按键</label>
+              <select id="autoPageKey">
+                <option value="RIGHT" selected>右方向键 (RIGHT)</option>
+                <option value="SPACE">空格键 (SPACE)</option>
+                <option value="DOWN">下方向键 (DOWN)</option>
+              </select>
+            </div>
+            <button class="btn btn-primary" id="btnAutoPageToggle">启动自动翻页</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h3 class="panel-title">Wi-Fi 脱机无线遥控配网</h3>
+              <p class="panel-subtitle">刷入 <code>ble-hid-v2.0.0</code> 后写入 2.4GHz Wi-Fi，ESP32 插充电宝即可用手机打开 IP 无线遥控 iPad。</p>
+            </div>
+          </div>
+          <div class="toolbar" style="margin-bottom: 10px;">
+            <div class="field">
+              <label for="wifiSsidInput">2.4GHz Wi-Fi 名称 (SSID)</label>
+              <input type="text" id="wifiSsidInput" placeholder="输入家里 2.4G Wi-Fi 名称" />
+            </div>
+            <div class="field">
+              <label for="wifiPassInput">Wi-Fi 密码</label>
+              <input type="text" id="wifiPassInput" placeholder="输入 Wi-Fi 密码" />
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary" id="btnWifiConfig">写入 Wi-Fi 并启动脱机网页</button>
+          </div>
+        </div>
+      </div>
+
       <div class="panel">
         <div class="panel-header">
           <h3 class="panel-title">遥控指令实时回执</h3>
           <button class="btn btn-sm" id="btnRemoteClearLog">清空</button>
         </div>
         <div class="terminal terminal-compact" id="remoteLog">[遥控器就绪] 点击右上角「连接控制串口」（115200 bps）后，点击上方任意按键即可远程控制您的 iPad mini 3。</div>
+      </div>
+    </section>
+
+    <!-- VIEW: LIVE SENSOR MONITOR -->
+    <section class="view" id="view-sensors">
+      <div class="page-header">
+        <div>
+          <h2>ESP32 传感器实时监控与波形图</h2>
+          <p>配合 <code>ble-hid-v2.0.0</code> 固件实时采集芯片温度、I2C 挂载传感器（AHT20/BH1750/VL53L0X 等）与人体存在引脚状态。</p>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="btnSensorStart">开启实时采集</button>
+          <button class="btn" id="btnSensorStop">停止采集</button>
+          <button class="btn btn-dark" id="btnI2cScan">扫描 I2C 传感器</button>
+        </div>
+      </div>
+
+      <div class="grid-4">
+        <div class="metric">
+          <div class="metric-label">芯片温度 (内置传感器)</div>
+          <div class="metric-value" id="sensorTempVal">-- °C</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">I2C 已发现传感器</div>
+          <div class="metric-value" id="sensorI2cVal">0 个</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">人体感应引脚 (GPIO4)</div>
+          <div class="metric-value" id="sensorPresenceVal">待采集</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">可用内存 / 运行时长</div>
+          <div class="metric-value" id="sensorHeapVal">-- KB</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h3 class="panel-title">实时温度波形图（1Hz 采样）</h3>
+            <p class="panel-subtitle">开启采集后每 1 秒刷新一次曲线，支持无需外接传感器直接体验内置温度监测。</p>
+          </div>
+          <span class="tag mono" id="sensorSampleCount">0 个采样点</span>
+        </div>
+        <canvas id="sensorChartCanvas" width="1120" height="260" style="width: 100%; height: 260px; display: block; border-radius: 8px; background: var(--surface-subtle); border: 1px solid var(--border);"></canvas>
       </div>
     </section>
 
@@ -471,7 +615,7 @@
         <div class="panel">
           <div class="panel-header">
             <h3 class="panel-title">当前运行版本</h3>
-            <span class="tag tag-accent mono" id="releaseCurrentVer">v1.3.0</span>
+            <span class="tag tag-accent mono" id="releaseCurrentVer">v2.0.0</span>
           </div>
           <p style="margin: 0 0 12px; color: var(--ink-secondary);">
             仓库地址：<a href="https://github.com/HanweiJiang79/hermes" target="_blank" rel="noopener" class="mono">HanweiJiang79/hermes</a>
@@ -499,7 +643,7 @@
           <h3 class="panel-title">变更日志 (Changelog)</h3>
         </div>
         <div style="font-size: 13.5px; color: var(--ink-secondary); line-height: 1.75;">
-          <div style="margin-bottom: 6px;"><span class="tag tag-success mono">v1.3.0</span> <strong style="margin-left: 6px; color: var(--ink);">2026-11-21 推荐传感器勾选与自动引脚接线</strong></div>
+          <div style="margin-bottom: 6px;"><span class="tag tag-success mono">v2.0.0</span> <strong style="margin-left: 6px; color: var(--ink);">2026-11-21 推荐传感器勾选与自动引脚接线</strong></div>
           <ul style="margin: 6px 0 14px; padding-left: 20px;">
             <li>需求工坊新增 12 款推荐 ESP32 传感器多选面板（含 AHT20、BME280、BH1750、SGP30、LD2410、VL53L0X、MPU6050、INMP441、OV2640、MAX30102、SSD1306 OLED、WS2812B）。</li>
             <li>勾选后实时生成推荐引脚接线说明，并在生成代码框架与 GitHub Issue 时自动带入所选传感器初始化代码。</li>
@@ -518,7 +662,7 @@
   </main>
 
   <footer class="footer">
-    <div>Hermes ESP32 Studio <span class="mono" id="footerVersion">v1.3.0</span> · 专为 ESP32 开发与测试打造</div>
+    <div>Hermes ESP32 Studio <span class="mono" id="footerVersion">v2.0.0</span> · 专为 ESP32 开发与测试打造</div>
     <div>
       <a href="https://github.com/HanweiJiang79/hermes" target="_blank" rel="noopener">GitHub: HanweiJiang79/hermes</a>
     </div>
