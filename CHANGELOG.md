@@ -2,6 +2,12 @@
 
 All notable changes to **Hermes ESP32 Studio** will be documented in this file.
 
+## [v1.0.1] - 2026-11-21
+
+### Fixed
+- 修复 Windows `start.bat` 中浏览器早于本地服务打开导致的 `ERR_CONNECTION_REFUSED` 问题（延迟 3 秒打开浏览器）。
+- 为 `start.bat` 增加依赖安装失败检测及国内清华 PyPI 镜像自动回退。
+
 ## [v1.0.0] - 2026-11-21
 
 ### Added
