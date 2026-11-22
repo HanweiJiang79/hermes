@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+backups/*.bin
+backups/*.json
+data/requirements.json
+.DS_Store
+Thumbs.db

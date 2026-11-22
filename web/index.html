@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hermes ESP32 Studio v1.0.0 — ESP32 固件备份、需求工坊与开源应用平台</title>
+  <meta name="description" content="用于 ESP32 开发板的交互式测试与管理工具：原始固件读取/备份/恢复、串口监视器、功能需求工坊、GitHub 最新 ESP32 应用广场及版本发布管理。" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">E32</div>
+        <h1 class="brand-title">Hermes ESP32 Studio</h1>
+        <span class="version-tag" id="appVersionBadge">v1.0.0</span>
+      </div>
+
+      <nav class="nav-tabs" aria-label="主导航">
+        <button class="nav-tab active" data-tab="device" id="tabBtnDevice">设备与备份</button>
+        <button class="nav-tab" data-tab="requirements" id="tabBtnRequirements">需求工坊</button>
+        <button class="nav-tab" data-tab="apps" id="tabBtnApps">ESP32 应用广场</button>
+        <button class="nav-tab" data-tab="releases" id="tabBtnReleases">版本与发布</button>
+      </nav>
+
+      <div class="topbar-status">
+        <span class="status-chip" id="modeStatusChip">
+          <span class="status-dot"></span>
+          <span id="modeStatusText">检测连接中...</span>
+        </span>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="mode-banner" id="modeBanner" style="display: none;">
+      <div id="modeBannerText"></div>
+      <div class="btn-row">
+        <button class="btn btn-sm" id="btnWebSerialQuick">浏览器 Web Serial 直连</button>
+      </div>
+    </div>
+
+    <!-- VIEW 1: DEVICE & BACKUP -->
+    <section class="view active" id="view-device">
+      <div class="page-header">
+        <div>
+          <h2>设备连接与原始程序备份 / 恢复</h2>
+          <p>读取 ESP32 板卡完整 Flash 原始固件并归档，支持下载本地、SHA-256 校验与一键恢复。</p>
+        </div>
+        <div class="btn-row">
+          <button class="btn" id="btnRefreshPorts">刷新串口</button>
+          <button class="btn btn-dark" id="btnDetectChip">检测芯片信息</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="toolbar">
+          <div class="field">
+            <label for="portSelect">串口端口（例如 COM5）</label>
+            <select id="portSelect">
+              <option value="COM5">COM5 — USB-SERIAL CH340（推荐）</option>
+            </select>
+          </div>
+          <div class="field narrow">
+            <label for="baudSelect">烧录 / 读取波特率</label>
+            <select id="baudSelect">
+              <option value="115200">115200</option>
+              <option value="460800" selected>460800（推荐）</option>
+              <option value="921600">921600（高速）</option>
+            </select>
+          </div>
+          <div class="field narrow">
+            <label for="flashSizeSelect">Flash 容量</label>
+            <select id="flashSizeSelect">
+              <option value="ALL" selected>自动全量 (ALL)</option>
+              <option value="4MB">4 MB</option>
+              <option value="8MB">8 MB</option>
+              <option value="16MB">16 MB</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-4">
+        <div class="metric">
+          <div class="metric-label">芯片型号</div>
+          <div class="metric-value" id="metricChip">待检测</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Flash 容量</div>
+          <div class="metric-value" id="metricFlash">待检测</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">MAC 地址</div>
+          <div class="metric-value" id="metricMac">--:--:--:--:--:--</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">当前端口</div>
+          <div class="metric-value" id="metricPort">COM5</div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h3 class="panel-title">1. 下载并备份原始程序</h3>
+              <p class="panel-subtitle">通过 esptool 读取 0x0 起始全量 Flash，建议测试新固件前先执行一次原厂备份。</p>
+            </div>
+          </div>
+
+          <div class="toolbar" style="margin-bottom: 12px;">
+            <div class="field">
+              <label for="backupLabel">备份名称</label>
+              <input type="text" id="backupLabel" value="xiaozhi-factory" placeholder="例如 xiaozhi-factory" />
+            </div>
+            <div class="field narrow">
+              <label for="backupVersion">备份版本号</label>
+              <input type="text" id="backupVersion" value="v1.0.0" placeholder="v1.0.0" />
+            </div>
+          </div>
+          <div class="field" style="margin-bottom: 14px;">
+            <label for="backupNotes">备注信息（可选）</label>
+            <input type="text" id="backupNotes" placeholder="例如：出厂原版《你好！小智》程序备份" />
+          </div>
+
+          <div class="btn-row">
+            <button class="btn btn-primary" id="btnStartBackup">读取并备份原始固件</button>
+          </div>
+
+          <div class="progress-wrap" id="taskProgressWrap">
+            <div class="progress-head">
+              <span id="taskProgressLabel">准备中...</span>
+              <span id="taskProgressPct">0%</span>
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill" id="taskProgressFill"></div>
+            </div>
+          </div>
+
+          <div class="terminal terminal-compact" id="esptoolConsole">[就绪] 选择串口（如 COM5）后，点击「检测芯片信息」或「读取并备份原始固件」。</div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h3 class="panel-title">2. 烧录新固件 & 实时串口监视器</h3>
+              <p class="panel-subtitle">上传 .bin 固件直接写入板卡，或打开串口实时查看板卡调试日志。</p>
+            </div>
+          </div>
+
+          <div class="toolbar" style="margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--border);">
+            <div class="field">
+              <label for="flashFileInput">选择固件文件 (.bin)</label>
+              <input type="file" id="flashFileInput" accept=".bin" />
+            </div>
+            <div class="field narrow" style="flex: 0 0 110px;">
+              <label for="flashAddrInput">烧录地址</label>
+              <input type="text" id="flashAddrInput" value="0x0" />
+            </div>
+            <button class="btn btn-dark" id="btnFlashFile">烧录固件</button>
+          </div>
+
+          <div class="btn-row" style="margin-bottom: 10px; justify-content: space-between;">
+            <div class="btn-row">
+              <button class="btn btn-sm btn-primary" id="btnSerialToggle">连接串口监视器</button>
+              <select id="serialBaudSelect" style="width: 110px; height: 30px; padding: 2px 8px; font-size: 12px;">
+                <option value="115200" selected>115200 bps</option>
+                <option value="74880">74880 bps</option>
+                <option value="9600">9600 bps</option>
+              </select>
+            </div>
+            <button class="btn btn-sm" id="btnSerialClear">清空日志</button>
+          </div>
+
+          <div class="terminal" id="serialConsole">[串口监视器] 点击「连接串口监视器」查看 ESP32 实时启动与运行输出...</div>
+
+          <div class="toolbar" style="margin-top: 10px;">
+            <div class="field">
+              <input type="text" id="serialSendInput" placeholder="输入串口指令（如 AT、help、status），回车发送..." />
+            </div>
+            <button class="btn btn-sm" id="btnSerialSend">发送</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h3 class="panel-title">已保存的原始固件备份档案</h3>
+            <p class="panel-subtitle">所有备份均保存在项目 backups/ 目录中，随时可下载本地或一键恢复到 ESP32 板卡。</p>
+          </div>
+          <button class="btn btn-sm" id="btnReloadBackups">刷新档案</button>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>名称与版本</th>
+                <th>芯片 / 容量</th>
+                <th>文件大小</th>
+                <th>SHA-256 校验</th>
+                <th>备份时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="backupsTableBody">
+              <tr>
+                <td colspan="6" class="empty-state">暂无备份档案，点击上方「读取并备份原始固件」创建第一份原厂备份。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 2: FEATURE STUDIO -->
+    <section class="view" id="view-requirements">
+      <div class="page-header">
+        <div>
+          <h2>ESP32 功能需求工坊</h2>
+          <p>输入您想在 ESP32 上实现的新功能，自动生成带版本号的开发规格与代码框架，并可一键同步至 GitHub Issue。</p>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h3 class="panel-title">新建功能需求</h3>
+        </div>
+        <form id="reqForm">
+          <div class="toolbar" style="margin-bottom: 12px;">
+            <div class="field" style="flex: 2;">
+              <label for="reqTitle">功能标题</label>
+              <input type="text" id="reqTitle" required placeholder="例如：通过 OLED 实时显示温湿度并支持语音播报" />
+            </div>
+            <div class="field narrow">
+              <label for="reqBoard">目标板卡</label>
+              <select id="reqBoard">
+                <option value="ESP32-S3" selected>ESP32-S3（小智）</option>
+                <option value="ESP32">ESP32（经典款）</option>
+                <option value="ESP32-C3">ESP32-C3</option>
+                <option value="ESP32-C6">ESP32-C6</option>
+              </select>
+            </div>
+            <div class="field narrow">
+              <label for="reqFramework">开发框架</label>
+              <select id="reqFramework">
+                <option value="Arduino" selected>Arduino (C++)</option>
+                <option value="ESP-IDF">ESP-IDF (C)</option>
+                <option value="MicroPython">MicroPython</option>
+              </select>
+            </div>
+            <div class="field narrow">
+              <label for="reqCategory">功能分类</label>
+              <select id="reqCategory">
+                <option value="AI 语音">AI 语音</option>
+                <option value="外设控制" selected>外设控制</option>
+                <option value="Wi-Fi / 物联网">Wi-Fi / 物联网</option>
+                <option value="屏幕与交互">屏幕与交互</option>
+                <option value="硬件自检测试">硬件自检测试</option>
+              </select>
+            </div>
+            <div class="field narrow" style="flex: 0 0 110px;">
+              <label for="reqPriority">优先级</label>
+              <select id="reqPriority">
+                <option value="高">高</option>
+                <option value="中" selected>中</option>
+                <option value="低">低</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field" style="margin-bottom: 14px;">
+            <label for="reqDescription">详细需求描述（预期行为、引脚定义、触发条件等）</label>
+            <textarea id="reqDescription" required placeholder="请描述希望在板卡上实现的功能细节，例如：开机后连接 Wi-Fi，按 BOOT 键切换测试模式，通过串口每秒打印一次传感器采样值..."></textarea>
+          </div>
+
+          <div class="btn-row">
+            <button type="submit" class="btn btn-primary">生成开发方案与代码框架</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h3 class="panel-title">需求列表与代码框架</h3>
+            <p class="panel-subtitle">每条需求自动分配独立版本号（req-v1.0 起），支持导出源码与一键提交到 GitHub。</p>
+          </div>
+          <span class="tag" id="reqCountTag">0 条需求</span>
+        </div>
+        <div class="req-list" id="reqList">
+          <div class="empty-state">还没有录入需求，请在上方输入想在 ESP32 上实现的功能。</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 3: GITHUB ESP32 APP HUB -->
+    <section class="view" id="view-apps">
+      <div class="page-header">
+        <div>
+          <h2>GitHub 最新 ESP32 开源应用广场</h2>
+          <p>精选当前 GitHub 活跃度最高的 ESP32 固件与框架（含小智 AI、ESPHome、WLED、LVGL 等），并支持实时检索 GitHub。</p>
+        </div>
+      </div>
+
+      <div class="filter-bar">
+        <div class="filter-pills" id="appCategoryPills">
+          <button class="pill active" data-cat="全部">全部</button>
+          <button class="pill" data-cat="AI 语音 / 小智">AI 语音 / 小智</button>
+          <button class="pill" data-cat="官方框架">官方框架</button>
+          <button class="pill" data-cat="智能家居">智能家居</button>
+          <button class="pill" data-cat="图形界面">图形界面</button>
+          <button class="pill" data-cat="通信与极客">通信与极客</button>
+        </div>
+
+        <form class="search-group" id="githubSearchForm">
+          <input type="search" id="githubSearchInput" placeholder="实时搜索 GitHub ESP32 项目..." />
+          <button type="submit" class="btn btn-dark">搜索</button>
+        </form>
+      </div>
+
+      <div class="apps-grid" id="appsGrid"></div>
+    </section>
+
+    <!-- VIEW 4: RELEASES & GITHUB MANAGEMENT -->
+    <section class="view" id="view-releases">
+      <div class="page-header">
+        <div>
+          <h2>版本管理与 GitHub 发布</h2>
+          <p>本项目由 GitHub 仓库统一托管版本迭代，支持 Release 归档、变更记录与 Windows 一键启动。</p>
+        </div>
+        <div class="btn-row">
+          <a class="btn btn-dark" href="https://github.com/HanweiJiang79/hermes" target="_blank" rel="noopener">打开 GitHub 仓库</a>
+          <a class="btn btn-primary" href="https://github.com/HanweiJiang79/hermes/releases" target="_blank" rel="noopener">查看所有 Releases</a>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-header">
+            <h3 class="panel-title">当前运行版本</h3>
+            <span class="tag tag-accent mono" id="releaseCurrentVer">v1.0.0</span>
+          </div>
+          <p style="margin: 0 0 12px; color: var(--ink-secondary);">
+            仓库地址：<a href="https://github.com/HanweiJiang79/hermes" target="_blank" rel="noopener" class="mono">HanweiJiang79/hermes</a>
+          </p>
+          <div style="font-size: 13px; color: var(--ink-secondary); line-height: 1.7;">
+            <strong>Windows 本地连接 COM5 快速启动：</strong>
+            <ol style="margin: 6px 0 0; padding-left: 18px;">
+              <li>克隆仓库：<code>git clone https://github.com/HanweiJiang79/hermes.git</code></li>
+              <li>双击目录中的 <code>start.bat</code>（自动安装 <code>esptool</code> 与串口依赖）</li>
+              <li>自动打开浏览器后，在左上角选择 <code>COM5</code> 即可读取、备份与恢复板卡原始固件</li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <h3 class="panel-title">GitHub Releases 发布记录</h3>
+            <button class="btn btn-sm" id="btnReloadReleases">刷新</button>
+          </div>
+          <div id="releasesList" class="empty-state">正在从 GitHub 加载 Release 记录...</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h3 class="panel-title">变更日志 (Changelog)</h3>
+        </div>
+        <div style="font-size: 13.5px; color: var(--ink-secondary); line-height: 1.75;">
+          <div style="margin-bottom: 6px;"><span class="tag tag-success mono">v1.0.0</span> <strong style="margin-left: 6px; color: var(--ink);">2026-11-21 首个正式发布版本</strong></div>
+          <ul style="margin: 6px 0 0; padding-left: 20px;">
+            <li>支持通过 <code>esptool</code> 自动检测 ESP32 芯片型号、MAC 与 Flash 容量，一键读取并备份原始程序（含版本号与 SHA-256 校验）。</li>
+            <li>支持下载备份 <code>.bin</code> 文件、一键恢复原厂固件及上传自定义 <code>.bin</code> 烧录。</li>
+            <li>内置实时串口监视器（本地服务 SSE 流 + 浏览器 Web Serial API 双模式）。</li>
+            <li>新增「需求工坊」：输入 ESP32 新功能需求自动生成 Arduino / ESP-IDF / MicroPython 代码框架，并支持同步至 GitHub Issue。</li>
+            <li>新增「ESP32 应用广场」：聚合 12 款当前 GitHub 最新热门 ESP32 开源应用并支持实时搜索。</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div>Hermes ESP32 Studio <span class="mono" id="footerVersion">v1.0.0</span> · 专为 ESP32 开发与测试打造</div>
+    <div>
+      <a href="https://github.com/HanweiJiang79/hermes" target="_blank" rel="noopener">GitHub: HanweiJiang79/hermes</a>
+    </div>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
